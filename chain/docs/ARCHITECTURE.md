@@ -86,7 +86,7 @@ The same contracts, deployed at chain launch:
 | Relayer | Less needed once fees are abstracted; stays for users who want it. |
 | Sodi A2A, Memory, ERC-8183 hook | None. Their envelopes bind the chain ID, so L3 messages can't be replayed on L2 or the reverse. |
 
-Deploy them through a deterministic CREATE2 factory so addresses are predictable. The rollup creator deploys token bridge factories on the L3 at genesis (that's the ~0.13 ETH prepaid in the deployment), so the factory pattern is already in place for the bridge.
+Deploy them through a deterministic CREATE2 factory so addresses are predictable. The rollup creator deploys token bridge factories on the L3 at genesis (unless skipped, which saves ~0.13 ETH; we can deploy them later from the L3, where we set the gas price), so the factory pattern is already in place for the bridge.
 
 ## Sequencer and ordering
 
@@ -113,6 +113,6 @@ The sequencer sees transactions in plaintext before they're ordered. For payment
 
 `chain/deploy` holds the scripts. Run on a fork, the core deployment against the real RollupCreator succeeds and produces a rollup with the right chain ID, owner, batch poster, validator and challenge period. A real testnet deployment needs:
 
-- about **0.13 ETH** on Robinhood Chain testnet in the owner wallet, almost all of it prepaid L3 gas for the bridge factories (unused gas is refunded on the L3), plus about 7.6M gas for the deployment itself, which costs very little at current prices;
+- about 7.3M gas on Robinhood Chain testnet, under 0.0001 ETH at current prices, with `SKIP_L3_FACTORIES=1`; without it, another ~0.13 ETH prepays L3 gas for the standard factories (refunded on the L3 if unused);
 - three keys: owner, batch poster, validator;
 - a machine running Nitro.

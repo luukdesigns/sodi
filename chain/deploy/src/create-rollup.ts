@@ -10,6 +10,9 @@
  *   VALIDATOR_ADDRESS      the key that posts assertions (comma-separated for several)
  *   SODI_NETWORK           testnet (default) or mainnet
  *   PARENT_RPC_URL         optional; defaults to the public Robinhood Chain RPC
+ *   SKIP_L3_FACTORIES=1    don't prepay deployment of the standard CREATE2 factories on the L3
+ *                          (~0.13 ETH at the default L3 gas price); deploy them later from the L3
+ *                          itself, where we set the gas price. Cuts the cost to the gas alone.
  *
  * Use three different keys. The owner can upgrade everything, so on mainnet it belongs in a multisig.
  */
@@ -46,7 +49,8 @@ if (validators.includes(owner.address) || batchPoster === owner.address) {
 }
 
 const config = rollupConfig(parentClient as never, chain, owner.address);
-const params = { config, batchPosters: [batchPoster], validators };
+const deployFactoriesToL2 = process.env.SKIP_L3_FACTORIES !== '1';
+const params = { config, batchPosters: [batchPoster], validators, deployFactoriesToL2 };
 
 console.log(`${chain.name} (chain ${chain.chainId}) on ${chain.parent.name} (${chain.parent.id})`);
 console.log(`  owner         ${owner.address}`);
@@ -59,10 +63,9 @@ console.log(`  RollupCreator ${PARENT_FACTORIES[chain.parent.id as 46630 | 4663]
 if (!send) {
   // The call value prepays the retryable tickets that deploy the token bridge factories on the L3.
   // Any unused part is refunded on the L3, so it is not lost, but it must be in the wallet up front.
-  const value = await createRollupGetRetryablesFeesWithDefaults(parentClient as never, {
-    account: owner.address,
-    nativeToken: zeroAddress,
-  });
+  const value = deployFactoriesToL2
+    ? await createRollupGetRetryablesFeesWithDefaults(parentClient as never, { account: owner.address, nativeToken: zeroAddress })
+    : 0n;
   const balance = await parentClient.getBalance({ address: owner.address });
   console.log('\nDry run');
   console.log(`  value         ${formatEther(value)} ETH (prepaid L3 factory deployment, refunded on the L3 if unused)`);
@@ -80,6 +83,7 @@ if (!send) {
   const gasPrice = await parentClient.getGasPrice();
   const gas = request.gas ?? 0n;
   console.log(`  gas           ${gas} (~${formatEther(gas * gasPrice)} ETH at ${gasPrice} wei/gas)`);
+  console.log(`  total         ~${formatEther(gas * gasPrice + value)} ETH`);
   console.log('\nSimulation passed. Re-run with --send to deploy.');
   process.exit(0);
 }

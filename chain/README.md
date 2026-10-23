@@ -35,7 +35,7 @@ SODI_RPC_URL=http://localhost:8449 npm run token-bridge
 
 Set `SODI_NETWORK=mainnet` for mainnet. Use three different keys; on mainnet the owner should be a multisig.
 
-Testnet deployment needs about 0.13 ETH in the owner wallet, almost all of it prepaid L3 gas for the bridge factories, refunded on the L3 if unused.
+By default the deployment also prepays about 0.13 ETH of L3 gas to deploy the standard CREATE2 factories on the L3 (refunded there if unused). Set `SKIP_L3_FACTORIES=1` to skip that and deploy them later from the L3, where we set the gas price; the deployment then costs only its gas, about 7.3M gas (under 0.0001 ETH on testnet today, simulated against the live chain).
 
 ## Rehearsal on a fork
 

@@ -11,7 +11,7 @@
 
 ### 1. Devnet (days)
 
-- [ ] Deploy core contracts on Robinhood Chain testnet (needs ~0.13 testnet ETH).
+- [ ] Deploy core contracts on Robinhood Chain testnet (simulated against the live chain: ~7.3M gas, under 0.0001 ETH, with `SKIP_L3_FACTORIES=1`).
 - [ ] Run one Nitro node as sequencer, batch poster and validator.
 - [ ] Deploy the token bridge; bridge ETH in and out.
 - [ ] Deploy the Sodi contracts; run the A2A, memory and ERC-8183 demos on the L3.
