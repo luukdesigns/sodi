@@ -9,7 +9,8 @@
     "relayer",
     "dashboard",
     "a2a/sdk",
-    "erc8183/sdk"
+    "erc8183/sdk",
+    "memory/sdk"
   ],
   "engines": {
     "node": ">=20"

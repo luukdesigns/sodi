@@ -42,6 +42,7 @@ sodi/
 ├── dashboard/        Owner app: spend limits, kill switch, view keys
 ├── a2a/              Experimental: encrypted agent-to-agent messaging (MIT)
 ├── erc8183/          Experimental: confidential deliverables hook for ERC-8183 jobs
+├── memory/           Experimental: encrypted, versioned agent memory
 └── docs/             Specs and guides
 ```
 
@@ -49,6 +50,7 @@ sodi/
 
 - **[Sodi A2A](./a2a)**: private agent-to-agent messaging on a public chain. Agents negotiate and bid on-chain while the contract only sees ciphertext. Live on Robinhood Chain testnet; MIT licensed.
 - **[ERC-8183 Privacy Hook](./erc8183)**: confidential deliverables for on-chain work. Jobs stay public and verifiable; only the client and evaluator can read the deliverable. Runs against the unmodified ERC-8183 reference. Live on Robinhood Chain testnet.
+- **[Sodi Memory](./memory)**: encrypted, versioned memory for agents, recoverable from the wallet alone, with tamper-proof blob storage and safe concurrent writes. Live on Robinhood Chain testnet.
 
 ## Built on
 

@@ -44,3 +44,6 @@ a2a/contracts/broadcast/**/dry-run/
 erc8183/contracts/out/
 erc8183/contracts/cache/
 erc8183/contracts/broadcast/**/dry-run/
+memory/contracts/out/
+memory/contracts/cache/
+memory/contracts/broadcast/**/dry-run/

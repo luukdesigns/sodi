@@ -1,0 +1,32 @@
+{
+  "name": "@sodi/memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Encrypted, versioned memory for AI agents, anchored on-chain.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "demo": "tsx demo/memory.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@sodi/a2a": "*",
+    "viem": "^2.22.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

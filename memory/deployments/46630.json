@@ -1,0 +1,20 @@
+{
+  "network": "Robinhood Chain Testnet",
+  "chainId": 46630,
+  "SodiMemory": "0x5792659446E32eF320Dd19b42cc27a3737ac710e",
+  "deploymentBlock": 141454229,
+  "deploymentTx": "0x2c1b974deae5e1a52f5f782a8834fe14db068f302cdcf19860e7e08a1862d04b",
+  "demo": {
+    "description": "Agent memory demo (sdk/demo/memory.ts) run live on 2026-10-23; all writes gasless via relayer",
+    "agent": "0x3435eb4492f65f1e5606dd8c6b208f8febc8457e",
+    "commits": {
+      "portfolio v1 (inline)": "0xaf66c43a6ba611d724f0d1d7d3c4d645f2d10a786b98d5de6a3b2ef42c115562",
+      "research v1 (pointer to blob store)": "0xfbf3379e62314fbf36ab6ee5469c9c0df1904a9669e3d8058685c7679f6cff6d",
+      "portfolio v2 (copy A)": "0xcfff950c0865d2ac53461f024e39022168757e6799f038307d5abc2191f91375",
+      "portfolio v3 (copy B, after conflict + retry)": "0x7ff14215ee29cf2fa29924611c044705a0026e779301e7c1bced6fe8af602c52",
+      "handoff shared with teammate": "0x63ad38e3a77041d2c472032c9535b515abb161cd8fb361e1a29eb53720bd9dba",
+      "portfolio v4 (key epoch 2)": "0x042284168fa7a228e2854de124c7e5bafc349aedb9b583814a6772da97331deb",
+      "research v2 (key epoch 2)": "0x0c436d25cacfda1cc0b49eee86f1eceff59ec03af8753c064818a9918291de92"
+    }
+  }
+}
