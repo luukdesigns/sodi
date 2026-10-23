@@ -37,6 +37,7 @@ sodi/
 ├── packages/
 │   ├── rx402/        Agent SDK: sessions, signing, rotation (@sodi/rx402)
 │   └── mcp/          MCP server so agents can use rx402 directly
+├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses
 ├── dashboard/        Owner app: spend limits, kill switch, view keys
 └── docs/             Specs and guides
@@ -50,7 +51,9 @@ sodi/
 
 ## Roadmap
 
-- [ ] Pool, SDK and relayer on Robinhood Chain testnet, paying a test x402 endpoint end to end
+- [x] USDG privacy pool live on Robinhood Chain testnet ([addresses](./contracts/README.md#deployments))
+- [x] Approval service that screens deposits and publishes the approved set
+- [ ] rx402 SDK and relayer, paying a test x402 endpoint end to end
 - [ ] MCP server, owner dashboard and a demo agent
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Sodi L3 for per-payment privacy and near-zero fees

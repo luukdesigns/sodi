@@ -2,6 +2,7 @@
   "network": "Robinhood Chain Testnet",
   "chainId": 46630,
   "deployedAt": "2026-10-23",
+  "deploymentBlock": 141426400,
   "deployer": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
   "owner": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
   "postman": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
