@@ -1,0 +1,7 @@
+{
+  "name": "@sodi/relayer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Gasless withdrawal relayer for rx402 sessions.",
+  "license": "Apache-2.0"
+}

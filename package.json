@@ -1,0 +1,14 @@
+{
+  "name": "sodi",
+  "private": true,
+  "description": "Privacy-first infrastructure for agentic finance. Home of rx402.",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*",
+    "relayer",
+    "dashboard"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

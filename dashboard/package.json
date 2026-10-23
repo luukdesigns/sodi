@@ -1,0 +1,7 @@
+{
+  "name": "@sodi/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Owner dashboard for Sodi agents.",
+  "license": "Apache-2.0"
+}
