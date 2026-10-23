@@ -33,6 +33,21 @@ forge build
 forge test
 ```
 
+## Deployments
+
+### Robinhood Chain testnet (46630)
+
+| Contract | Address |
+| --- | --- |
+| Entrypoint (proxy) | [`0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce`](https://explorer.testnet.chain.robinhood.com/address/0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce) |
+| USDG pool | [`0x8cddbb1C33ce49aB72FD1765649835935604BF76`](https://explorer.testnet.chain.robinhood.com/address/0x8cddbb1C33ce49aB72FD1765649835935604BF76) |
+| Entrypoint implementation | `0xDcB02c8EF8057861f4fd37Becde9b1B2586F75f3` |
+| WithdrawalVerifier | `0x2740523E66d4a74002B8e11c839AbbF86A084c71` |
+| CommitmentVerifier | `0x58E37acaf8B2B2f61c3A65E1db59A7dEcb879061` |
+| USDG (asset) | `0x7E955252E15c84f5768B83c41a71F9eba181802F` |
+
+Owner and postman are the testnet deployer, `0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d`. Full details in [`deployments/46630.json`](./deployments/46630.json); transaction logs in `broadcast/`.
+
 ## What the deploy script does
 
 1. Deploys the Groth16 `WithdrawalVerifier` and `CommitmentVerifier`.

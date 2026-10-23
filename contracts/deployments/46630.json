@@ -1,0 +1,26 @@
+{
+  "network": "Robinhood Chain Testnet",
+  "chainId": 46630,
+  "deployedAt": "2026-10-23",
+  "deployer": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+  "owner": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+  "postman": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+  "privacyPoolsCommit": "d494b63e79f33bb2b0c8ece6cdacdca465c3b884",
+  "contracts": {
+    "WithdrawalVerifier": "0x2740523E66d4a74002B8e11c839AbbF86A084c71",
+    "CommitmentVerifier": "0x58E37acaf8B2B2f61c3A65E1db59A7dEcb879061",
+    "EntrypointImplementation": "0xDcB02c8EF8057861f4fd37Becde9b1B2586F75f3",
+    "Entrypoint": "0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce",
+    "USDGPool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76"
+  },
+  "pools": {
+    "USDG": {
+      "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+      "pool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76",
+      "scope": "15275348139274045583819307907082263242021424355600177454175009643064466885852",
+      "minimumDepositAmount": "1000000",
+      "vettingFeeBPS": 0,
+      "maxRelayFeeBPS": 100
+    }
+  }
+}
