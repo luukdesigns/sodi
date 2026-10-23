@@ -1,0 +1,23 @@
+{
+  "name": "@sodi/chain-deploy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Draft deployment scripts for the Sodi L3, an Arbitrum Orbit chain settling to Robinhood Chain.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "rollup": "tsx src/create-rollup.ts",
+    "node-config": "tsx src/node-config.ts",
+    "token-bridge": "tsx src/create-token-bridge.ts",
+    "fork-test": "bash test/run-fork.sh"
+  },
+  "dependencies": {
+    "@arbitrum/chain-sdk": "0.28.0",
+    "viem": "1.21.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -44,6 +44,7 @@ sodi/
 ├── erc8183/          Experimental: confidential deliverables hook for ERC-8183 jobs
 ├── memory/           Experimental: encrypted, versioned agent memory
 ├── disclosure/       Experimental: scoped, verifiable disclosure to auditors
+├── chain/            Draft: Sodi L3, an Orbit chain settling to Robinhood Chain
 └── docs/             Specs and guides
 ```
 
@@ -68,7 +69,7 @@ sodi/
 - [x] Relayer service and MCP server, tested together end to end on a testnet fork
 - [ ] Owner dashboard and a public demo agent
 - [ ] Capped mainnet beta with partner merchants
-- [ ] Sodi L3 for per-payment privacy and near-zero fees
+- [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))
 
 ## Security
 
