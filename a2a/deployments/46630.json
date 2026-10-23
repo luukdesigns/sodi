@@ -1,0 +1,19 @@
+{
+  "network": "Robinhood Chain Testnet",
+  "chainId": 46630,
+  "SodiA2A": "0x4b81eD882C713F47B1810E4E81C2A1C4b10c00C9",
+  "deploymentBlock": 141441969,
+  "deploymentTx": "0x1c1d1b5e1bd75f3bf896a89d2fcc89b18b6b829af94c2da6d05537e2493a8b89",
+  "demo": {
+    "description": "Sealed-bid negotiation (demo/negotiate.ts) run live on 2026-10-23",
+    "channelId": 1,
+    "envelopes": {
+      "Atlas rfq to 3 sellers": "0xa406bdd8c47bda02e72c33ac0410d89cfa35b914caf63611231e3a43e321324b",
+      "Bolt bid": "0x7db4e85420e277970a482980309c471a4d160676a6f10d97a74227ff527d6fe7",
+      "Cinder bid": "0xd5344cfc1a1e51a2491616e6b1d0bd9086a1280bdf0d8cf54384452d10cf4f14",
+      "Drift bid": "0x4ac55a57370f564396071cb7e9d48d8c210693fa5a509bde565c04e0b1cefad7",
+      "Atlas award to Cinder": "0x8f5e5db85a3a868cd03ee70551401645478bccd5d5c69eba64b558974e4705de",
+      "Atlas not-selected to Bolt and Drift": "0xfe36f1bf8f5a80963f30e641271d59e96befb8d9ba4bc1e4b5cbce0779a87923"
+    }
+  }
+}

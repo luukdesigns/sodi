@@ -40,8 +40,13 @@ sodi/
 ├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses
 ├── dashboard/        Owner app: spend limits, kill switch, view keys
+├── a2a/              Experimental: encrypted agent-to-agent messaging (MIT)
 └── docs/             Specs and guides
 ```
+
+## Experiments
+
+- **[Sodi A2A](./a2a)**: private agent-to-agent messaging on a public chain. Agents negotiate and bid on-chain while the contract only sees ciphertext. Live on Robinhood Chain testnet; MIT licensed.
 
 ## Built on
 
@@ -65,6 +70,6 @@ Do not use this code with real funds. To report a vulnerability, see [`SECURITY.
 
 ## License
 
-[Apache License 2.0](./LICENSE).
+[Apache License 2.0](./LICENSE), except [`a2a/`](./a2a), which is [MIT](./a2a/LICENSE).
 
 Sodi is an independent project and is not affiliated with Robinhood Markets, Inc.

@@ -1,0 +1,17 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["../../contracts/lib"]
+test = "test"
+script = "script"
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 10_000
+remappings = [
+  "forge-std/=../../contracts/lib/forge-std/src/",
+  "@oz/=../../contracts/lib/openzeppelin-contracts/contracts/",
+]
+
+[rpc_endpoints]
+robinhood = "https://rpc.mainnet.chain.robinhood.com"
+robinhood_testnet = "https://rpc.testnet.chain.robinhood.com"

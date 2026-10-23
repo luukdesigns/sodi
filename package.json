@@ -7,7 +7,8 @@
     "packages/*",
     "asp",
     "relayer",
-    "dashboard"
+    "dashboard",
+    "a2a/sdk"
   ],
   "engines": {
     "node": ">=20"

@@ -38,3 +38,6 @@ Thumbs.db
 
 # Approval service runtime data
 asp/data/
+a2a/contracts/out/
+a2a/contracts/cache/
+a2a/contracts/broadcast/**/dry-run/
