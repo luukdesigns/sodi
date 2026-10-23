@@ -141,41 +141,66 @@ export function seal(message: Uint8Array, recipients: Hex[], context: Context): 
   return out;
 }
 
-/** Returns the message if `keys` is a recipient, otherwise null. Never throws on foreign envelopes. */
-export function open(envelope: Uint8Array, keys: KeyPair, context: Context): Uint8Array | null {
+interface Parsed {
+  ephemeralPub: Uint8Array;
+  count: number;
+  slotsEnd: number;
+}
+
+function parse(envelope: Uint8Array): Parsed | null {
   if (envelope.length < 2 + 32 + 2 + WRAPPED + NONCE + 16) return null;
   if (envelope[0] !== ENVELOPE_MAGIC || envelope[1] !== ENVELOPE_VERSION) return null;
-  const ephemeralPub = envelope.slice(2, 34);
   const count = new DataView(envelope.buffer, envelope.byteOffset).getUint16(34);
   const slotsEnd = 36 + count * WRAPPED;
   if (envelope.length < slotsEnd + NONCE + 16) return null;
+  return { ephemeralPub: envelope.slice(2, 34), count, slotsEnd };
+}
 
+/**
+ * Recovers the envelope's content key if `keys` is a recipient. The content key decrypts this one
+ * envelope and nothing else, which is what makes per-item disclosure possible: handing it to an
+ * auditor reveals exactly this message.
+ */
+export function unwrapContentKey(envelope: Uint8Array, keys: KeyPair, context: Context): Uint8Array | null {
+  const p = parse(envelope);
+  if (!p) return null;
   const aad = associatedData(context);
-  const myPub = hexToBytes(keys.publicKey);
   let shared: Uint8Array;
   try {
-    shared = x25519.getSharedSecret(keys.privateKey, ephemeralPub);
+    shared = x25519.getSharedSecret(keys.privateKey, p.ephemeralPub);
   } catch {
     return null;
   }
-  const kek = wrapKey(shared, ephemeralPub, myPub);
+  const kek = wrapKey(shared, p.ephemeralPub, hexToBytes(keys.publicKey));
   const zeroNonce = new Uint8Array(NONCE);
-
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < p.count; i++) {
     const slot = envelope.slice(36 + i * WRAPPED, 36 + (i + 1) * WRAPPED);
-    let contentKey: Uint8Array;
     try {
-      contentKey = xchacha20poly1305(kek, zeroNonce, aad).decrypt(slot);
+      const contentKey = xchacha20poly1305(kek, zeroNonce, aad).decrypt(slot);
+      // Only return keys that actually open the body under this context.
+      return openWithContentKey(envelope, contentKey, context) ? contentKey : null;
     } catch {
-      continue; // someone else's slot
-    }
-    try {
-      const nonce = envelope.slice(slotsEnd, slotsEnd + NONCE);
-      const padded = xchacha20poly1305(contentKey, nonce, aad).decrypt(envelope.slice(slotsEnd + NONCE));
-      return unpad(padded);
-    } catch {
-      return null; // our slot, but the body was tampered with or the context differs
+      // someone else's slot
     }
   }
   return null;
+}
+
+/** Decrypts an envelope given its content key, e.g. one received in a disclosure. */
+export function openWithContentKey(envelope: Uint8Array, contentKey: Uint8Array, context: Context): Uint8Array | null {
+  const p = parse(envelope);
+  if (!p) return null;
+  try {
+    const nonce = envelope.slice(p.slotsEnd, p.slotsEnd + NONCE);
+    const padded = xchacha20poly1305(contentKey, nonce, associatedData(context)).decrypt(envelope.slice(p.slotsEnd + NONCE));
+    return unpad(padded);
+  } catch {
+    return null;
+  }
+}
+
+/** Returns the message if `keys` is a recipient, otherwise null. Never throws on foreign envelopes. */
+export function open(envelope: Uint8Array, keys: KeyPair, context: Context): Uint8Array | null {
+  const contentKey = unwrapContentKey(envelope, keys, context);
+  return contentKey ? openWithContentKey(envelope, contentKey, context) : null;
 }

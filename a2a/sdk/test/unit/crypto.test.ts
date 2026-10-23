@@ -2,7 +2,17 @@ import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
 
-import { type Context, keyDerivationMessage, keyPairFromSignature, open, pad, seal, unpad } from '../../src/crypto.js';
+import {
+  type Context,
+  keyDerivationMessage,
+  keyPairFromSignature,
+  open,
+  openWithContentKey,
+  pad,
+  seal,
+  unpad,
+  unwrapContentKey,
+} from '../../src/crypto.js';
 
 const alice = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
 const bob = privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a');
@@ -87,5 +97,28 @@ describe('envelopes', () => {
   it('round-trips padding', () => {
     expect(unpad(pad(msg))).toEqual(msg);
     expect(() => pad(new Uint8Array(20_000))).toThrow(/too large/);
+  });
+});
+
+describe('content keys (used for disclosure)', () => {
+  it('open exactly one envelope and nothing else', async () => {
+    const b = await keysOf(bob);
+    const one = seal(msg, [b.publicKey], ctx);
+    const two = seal(new TextEncoder().encode('another message'), [b.publicKey], ctx);
+    const k1 = unwrapContentKey(one, b, ctx)!;
+    expect(openWithContentKey(one, k1, ctx)).toEqual(msg);
+    expect(openWithContentKey(two, k1, ctx)).toBeNull();
+  });
+
+  it('cannot be recovered by non-recipients', async () => {
+    const [b, e] = await Promise.all([keysOf(bob), keysOf(eve)]);
+    expect(unwrapContentKey(seal(msg, [b.publicKey], ctx), e, ctx)).toBeNull();
+  });
+
+  it('still respect the context', async () => {
+    const b = await keysOf(bob);
+    const env = seal(msg, [b.publicKey], ctx);
+    const k = unwrapContentKey(env, b, ctx)!;
+    expect(openWithContentKey(env, k, { ...ctx, author: eve.address })).toBeNull();
   });
 });

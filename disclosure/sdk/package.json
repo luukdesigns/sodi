@@ -1,0 +1,33 @@
+{
+  "name": "@sodi/disclosure",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scoped, verifiable disclosure of Sodi activity to auditors.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "demo": "tsx demo/disclose.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sodi/a2a": "*",
+    "@sodi/memory": "*",
+    "@sodi/rx402": "*",
+    "viem": "^2.22.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

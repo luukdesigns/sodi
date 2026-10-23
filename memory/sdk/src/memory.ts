@@ -1,4 +1,4 @@
-import { type KeyPair, open, seal } from '@sodi/a2a';
+import { type KeyPair, open, seal, unwrapContentKey } from '@sodi/a2a';
 import {
   type Address,
   type Hex,
@@ -317,6 +317,39 @@ export class AgentMemory {
       if (plain) return JSON.parse(dec.decode(plain)) as { value: unknown; epoch: number; t: number };
     }
     return null;
+  }
+
+  /**
+   * Per-version content keys for a slot, for disclosing selected versions to an auditor. Each key
+   * opens exactly one version; nothing else about this agent's memory is revealed.
+   */
+  async contentKeys(
+    slot: Slot | string,
+    opts: { versions?: bigint[] } = {},
+  ): Promise<{ ref: string; namespace: Hex; version: bigint; contentKey: Hex; location: string }[]> {
+    const id = this.slotId(slot);
+    const logs = await this.c.publicClient.getLogs({
+      address: this.c.contract,
+      event: memoryCommittedEvent,
+      args: { agent: this.address, namespace: id },
+      fromBlock: this.c.fromBlock,
+    });
+    const out = [];
+    for (const log of logs) {
+      const version = BigInt(log.args.version!);
+      if (opts.versions && !opts.versions.includes(version)) continue;
+      const envelope = await this.fetchEnvelope(log.args.envelope!, log.args.location!);
+      if (keccak256(envelope) !== log.args.contentHash) throw new Error(`memory version ${version} failed its integrity check`);
+      const ctx = this.context(id, this.address);
+      let key: Uint8Array | null = null;
+      for (let e = this.epoch; e >= 1 && !key; e--) {
+        if (!this.keys.has(e)) this.keys.set(e, await deriveMemoryKey(this.c.wallet, e));
+        key = unwrapContentKey(envelope, this.keys.get(e)!, ctx);
+      }
+      if (!key) continue;
+      out.push({ ref: `${log.transactionHash}:${log.logIndex}`, namespace: id, version, contentKey: bytesToHex(key), location: log.args.location! });
+    }
+    return out;
   }
 
   /** Reads a slot another agent shared with `reader` (e.g. this agent's messaging key pair). */
