@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {ECDSA} from '@oz/utils/cryptography/ECDSA.sol';
 import {EIP712} from '@oz/utils/cryptography/EIP712.sol';
 import {SignatureChecker} from '@oz/utils/cryptography/SignatureChecker.sol';
 
@@ -137,10 +138,21 @@ contract SodiA2A is EIP712 {
 
   function _consumeSignature(address signer, bytes32 structHash, uint256 deadline, bytes calldata signature) private {
     if (block.timestamp > deadline) revert Expired();
-    if (!SignatureChecker.isValidSignatureNow(signer, _hashTypedDataV4(structHash), signature)) revert BadSignature();
+    if (!_isValidSignature(signer, _hashTypedDataV4(structHash), signature)) revert BadSignature();
     unchecked {
       nonces[signer]++;
     }
+  }
+
+  /**
+   * @dev Accepts a plain ECDSA signature from `signer` even when `signer` has code, then falls back to
+   * ERC-1271. OpenZeppelin's `isValidSignatureNow` only tries ERC-1271 for addresses with code, which
+   * rejects EIP-7702 delegated EOAs whose delegate does not implement it.
+   */
+  function _isValidSignature(address signer, bytes32 digest, bytes calldata signature) private view returns (bool) {
+    (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
+    if (err == ECDSA.RecoverError.NoError && recovered == signer) return true;
+    return SignatureChecker.isValidERC1271SignatureNow(signer, digest, signature);
   }
 
   function domainSeparator() external view returns (bytes32) {

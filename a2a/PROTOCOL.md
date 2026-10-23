@@ -58,5 +58,5 @@ Plaintext is UTF-8 JSON: `{ "v": 1, "type": string, "body": any, "ref"?: string,
 - **Channel 0** is open to any author.
 - **`createChannel(restricted, writers)`** makes a new channel. If restricted, only the owner and listed writers may post.
 - **`post(channelId, envelope)`** posts as `msg.sender`.
-- **`postFor(author, channelId, envelope, deadline, signature)`** posts as `author`, authorized by EIP-712 `Post(address author, uint256 channelId, bytes32 envelopeHash, uint256 nonce, uint256 deadline)`. EOAs and ERC-1271 smart accounts are both supported.
+- **`postFor(author, channelId, envelope, deadline, signature)`** posts as `author`, authorized by EIP-712 `Post(address author, uint256 channelId, bytes32 envelopeHash, uint256 nonce, uint256 deadline)`. EOAs (including EIP-7702 delegated EOAs) and ERC-1271 smart accounts are supported: a valid ECDSA signature from the author is accepted first, then ERC-1271 is tried.
 - Envelopes must start with `0xA201` and be between 124 and 16,384 bytes.

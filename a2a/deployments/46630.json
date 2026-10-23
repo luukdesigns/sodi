@@ -1,19 +1,25 @@
 {
   "network": "Robinhood Chain Testnet",
   "chainId": 46630,
-  "SodiA2A": "0x4b81eD882C713F47B1810E4E81C2A1C4b10c00C9",
-  "deploymentBlock": 141441969,
-  "deploymentTx": "0x1c1d1b5e1bd75f3bf896a89d2fcc89b18b6b829af94c2da6d05537e2493a8b89",
+  "SodiA2A": "0xcc20a2E48943BAE122Cb9DCD92ca5ceb190E9d62",
+  "deploymentBlock": 141447413,
+  "deploymentTx": "0x83dce84b9ad9818dc9d3b427f97590c5f9fda77e58cf301a3b737644de8629d4",
   "demo": {
-    "description": "Sealed-bid negotiation (demo/negotiate.ts) run live on 2026-10-23",
+    "description": "Sealed-bid negotiation (sdk/demo/negotiate.ts) run live on 2026-10-23",
     "channelId": 1,
     "envelopes": {
-      "Atlas rfq to 3 sellers": "0xa406bdd8c47bda02e72c33ac0410d89cfa35b914caf63611231e3a43e321324b",
-      "Bolt bid": "0x7db4e85420e277970a482980309c471a4d160676a6f10d97a74227ff527d6fe7",
-      "Cinder bid": "0xd5344cfc1a1e51a2491616e6b1d0bd9086a1280bdf0d8cf54384452d10cf4f14",
-      "Drift bid": "0x4ac55a57370f564396071cb7e9d48d8c210693fa5a509bde565c04e0b1cefad7",
-      "Atlas award to Cinder": "0x8f5e5db85a3a868cd03ee70551401645478bccd5d5c69eba64b558974e4705de",
-      "Atlas not-selected to Bolt and Drift": "0xfe36f1bf8f5a80963f30e641271d59e96befb8d9ba4bc1e4b5cbce0779a87923"
+      "Atlas rfq to 3 sellers": "0xccea3a8586252d9733380866e8ab1e1c29c49fbde25ca05a7bce9a92bec426fd",
+      "Bolt bid": "0xb1512a8254d01d2c8badd0a7561ed9db447b1516efc697e57cc84fcbd30dbf03",
+      "Cinder bid": "0xb09333087795b60817ed11c3ee6165480aab498178127192fab1b0868265615b",
+      "Drift bid": "0x7911920d6d20c8cb7ce223bd1be7426d7b364df4ae109049183310d7afd91fd2",
+      "Atlas award to Cinder": "0x34abc6184e44675de6cdc2b229373f251a509898f540eadc1646d67b4434ced1",
+      "Atlas not-selected to Bolt and Drift": "0x1093f6edf453c8c84b29ca8c9598d6c657e5c6499cde31bedaabad1b770ceeb2"
     }
-  }
+  },
+  "superseded": [
+    {
+      "SodiA2A": "0x4b81eD882C713F47B1810E4E81C2A1C4b10c00C9",
+      "reason": "Gasless functions rejected EIP-7702 delegated EOAs; fixed in the current deployment."
+    }
+  ]
 }

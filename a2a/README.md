@@ -15,7 +15,7 @@
 
 | | |
 | --- | --- |
-| Contract | [`0x4b81eD882C713F47B1810E4E81C2A1C4b10c00C9`](https://explorer.testnet.chain.robinhood.com/address/0x4b81eD882C713F47B1810E4E81C2A1C4b10c00C9) (Robinhood Chain testnet) |
+| Contract | [`0xcc20a2E48943BAE122Cb9DCD92ca5ceb190E9d62`](https://explorer.testnet.chain.robinhood.com/address/0xcc20a2E48943BAE122Cb9DCD92ca5ceb190E9d62) (Robinhood Chain testnet) |
 | Demo run | Channel #1, six envelopes; transactions in [`deployments/46630.json`](./deployments/46630.json) |
 
 ## The demo: a sealed-bid auction between agents
@@ -41,9 +41,9 @@ Eve     (nothing)          ← an outside agent watching the chain
 What the chain shows anyone:
 
 ```
-#1 Atlas  524 bytes  0xa20187c4b02458b51aa806b10c53bb1e58b19fd1…
-#1 Bolt   428 bytes  0xa2018aea7f824285b9c9d5273996818c8eaf4bec…
-#1 Cinder 428 bytes  0xa201074dcf7d1331389e0baf2095f0b985cc9a8c…
+#1 Atlas  524 bytes  0xa2010c3736069acef2eae34794ee1e745898a42f…
+#1 Bolt   428 bytes  0xa2014dca03e6c46d07a8cb50c6516e65f16f2e02…
+#1 Cinder 428 bytes  0xa201ef3f62f78723d1e9b98828f27eb29d3f866e…
 …
 ```
 
@@ -54,12 +54,12 @@ Eve's attempt to post a fake bid into the channel was rejected by the contract.
 ```ts
 import { A2AClient, WalletPostRelayer } from '@sodi/a2a';
 
-const agent = new A2AClient({ publicClient, wallet, contract: '0x4b81…00C9', relayer });
+const agent = new A2AClient({ publicClient, wallet, contract: '0xcc20…9d62', relayer });
 await agent.init();       // derive the key from a wallet signature
 await agent.register();   // publish the public key (gasless with a relayer)
 
 await agent.send({ to: [seller1, seller2], channelId: 1n, type: 'rfq', body: { job: '…' } });
-const messages = await agent.inbox({ fromBlock: 141441969n });
+const messages = await agent.inbox({ fromBlock: 141447413n });
 ```
 
 ## What is and isn't private
@@ -78,13 +78,15 @@ const messages = await agent.inbox({ fromBlock: 141441969n });
 - **Scanning cost.** Readers try every envelope on the channels they follow. That's fine for agent workloads, but needs view tags or indexing at scale.
 - **Wallets without deterministic signatures** (some smart wallets and MPC setups) can't derive a stable key. The SDK detects this and refuses.
 
+- **EIP-7702 wallets are supported** for gasless posting: a plain signature from the account's own key is accepted even when the account has delegated code. (The first deployment, `0x4b81…00C9`, rejected these and has been replaced.)
+
 Full wire format: [`PROTOCOL.md`](./PROTOCOL.md).
 
 ## Layout and tests
 
 ```
 a2a/
-├── contracts/   SodiA2A.sol and Foundry tests (14)
+├── contracts/   SodiA2A.sol and Foundry tests (16)
 ├── sdk/         TypeScript SDK (@sodi/a2a), crypto tests (11), demo, fork test
 └── deployments/ live addresses
 ```

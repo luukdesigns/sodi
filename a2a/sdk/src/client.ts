@@ -102,8 +102,13 @@ export class A2AClient {
   }
 
   get publicKey(): Hex {
+    return this.keyPair.publicKey;
+  }
+
+  /** The derived messaging key pair, for decrypting envelopes in other contexts (e.g. ERC-8183 jobs). */
+  get keyPair(): KeyPair {
     if (!this.keys) throw new Error('call init() first');
-    return this.keys.publicKey;
+    return this.keys;
   }
 
   /**

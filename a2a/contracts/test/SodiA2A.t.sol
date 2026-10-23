@@ -151,6 +151,25 @@ contract SodiA2ATest is Test {
     a2a.postFor(alice, 0, other, deadline, sig2);
   }
 
+  function test_PostFor_AcceptsEip7702DelegatedEOA() public {
+    // An EOA with an EIP-7702 delegation designator has code, but its own key still signs.
+    vm.etch(alice, abi.encodePacked(hex'ef0100', address(0xBEEF)));
+    bytes memory e = _envelope(300);
+    uint256 deadline = block.timestamp + 60;
+    bytes memory sig = _sign(keccak256(abi.encode(a2a.POST_TYPEHASH(), alice, 0, keccak256(e), 0, deadline)));
+    vm.expectEmit(true, true, false, true);
+    emit Posted(0, alice, e);
+    a2a.postFor(alice, 0, e, deadline, sig);
+  }
+
+  function test_PostFor_RejectsWrongSigner() public {
+    bytes memory e = _envelope(300);
+    uint256 deadline = block.timestamp + 60;
+    bytes memory sig = _sign(keccak256(abi.encode(a2a.POST_TYPEHASH(), bob, 0, keccak256(e), 0, deadline)));
+    vm.expectRevert(SodiA2A.BadSignature.selector);
+    a2a.postFor(bob, 0, e, deadline, sig);
+  }
+
   function test_PostFor_RejectsExpired() public {
     bytes memory e = _envelope(300);
     uint256 deadline = block.timestamp - 1;
