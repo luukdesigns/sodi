@@ -13,7 +13,6 @@ coverage/
 contracts/cache/
 contracts/out/
 contracts/broadcast/*/31337/
-contracts/lib/
 
 # Environment and secrets
 .env

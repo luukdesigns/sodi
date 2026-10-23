@@ -4,6 +4,25 @@ out = "out"
 libs = ["lib"]
 test = "test"
 script = "script"
+# Match the upstream Privacy Pools build settings so the deployed bytecode
+# corresponds to the audited contracts.
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 10_000
+bytecode_hash = "none"
+cbor_metadata = false
+fs_permissions = [{ access = "read-write", path = "./deployments/" }]
+remappings = [
+  "forge-std/=lib/forge-std/src/",
+  "@oz/=lib/openzeppelin-contracts/contracts/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "@oz-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+  "lean-imt/=lib/zk-kit.solidity/packages/lean-imt/contracts/",
+  "poseidon/=lib/poseidon-solidity/contracts/",
+  # Upstream Privacy Pools sources, used unchanged
+  "contracts/=lib/privacy-pools-core/packages/contracts/src/contracts/",
+  "interfaces/=lib/privacy-pools-core/packages/contracts/src/interfaces/",
+]
 
 [rpc_endpoints]
 robinhood = "https://rpc.mainnet.chain.robinhood.com"

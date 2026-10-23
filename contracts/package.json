@@ -1,0 +1,12 @@
+{
+  "name": "@sodi/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sodi pool deployment on Robinhood Chain, built on 0xbow Privacy Pools.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "deploy:testnet": "bash -c 'source ../.env && forge script script/DeployUSDGPool.s.sol:RobinhoodTestnet --rpc-url robinhood_testnet --account $DEPLOYER_ACCOUNT --broadcast --slow -vv'"
+  }
+}
