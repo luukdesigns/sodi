@@ -8,7 +8,8 @@
     "asp",
     "relayer",
     "dashboard",
-    "a2a/sdk"
+    "a2a/sdk",
+    "erc8183/sdk"
   ],
   "engines": {
     "node": ">=20"

@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity ^0.8.28;
+
+import {ERC20} from '@openzeppelin/contracts/token/ERC20/ERC20.sol';
+
+/// @notice Valueless 6-decimal test token for the demo's escrow. Anyone can mint.
+contract TestDollar is ERC20 {
+  constructor() ERC20('Sodi Test Dollar', 'tUSD') {}
+
+  function decimals() public pure override returns (uint8) {
+    return 6;
+  }
+
+  function mint(address to, uint256 amount) external {
+    _mint(to, amount);
+  }
+}

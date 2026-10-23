@@ -1,0 +1,25 @@
+{
+  "network": "Robinhood Chain Testnet",
+  "chainId": 46630,
+  "contracts": {
+    "AgenticCommerce": "0xc418c15f618a8af3102465bcb92b2297122f81b2",
+    "ConfidentialDeliverableHook": "0x31eed88eb741f0e964f5726a7d1900f712c8eab5",
+    "TestDollar": "0x1d1f82f629aadc89097308dd4b83a98fe07bb92b",
+    "KeyRegistry (SodiA2A)": "0xcc20a2E48943BAE122Cb9DCD92ca5ceb190E9d62"
+  },
+  "notes": "AgenticCommerce is the unmodified ERC-8183 reference implementation behind an ERC-1967 proxy, paying in a valueless test token (tUSD).",
+  "demo": {
+    "description": "Confidential security review (sdk/demo/audit-job.ts) run live on 2026-10-23",
+    "jobId": 1,
+    "client": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+    "provider": "0x41db96BB10977743C14b4DcBA3A02617b5f356Ae",
+    "evaluator": "0xE1F276aA58A95f0Ab800fd187eCDcf6E23296Bd7",
+    "deliverable": "0x1129a1a9facfdd0edb2d2bf0550f39e1de750c59f2ba823cf709f1c611f196d2",
+    "transactions": {
+      "createJob": "0xc069e3e3035f7f43e5ee392215c8808b5b66e1d1f23ef27fa486180e5404fd90",
+      "fund": "0xf839281b94adf961afae1a3cae6f6041253b59011b42ede92e93bfa328b0bdf3",
+      "submit (encrypted report)": "0x3a67378d47f53b0f626e7a87e4a455375f60d0f3530146e0e176b2c40d34b796",
+      "complete (encrypted review)": "0x1fe5845742a6992efe188ffa10132d87624e58fb3734b6784c3c3b2f659cb386"
+    }
+  }
+}
