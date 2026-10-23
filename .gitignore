@@ -13,6 +13,7 @@ coverage/
 contracts/cache/
 contracts/out/
 contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
 
 # Environment and secrets
 .env
