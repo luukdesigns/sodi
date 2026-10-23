@@ -1,0 +1,27 @@
+{
+  "name": "@sodi/demo-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A public demo: an agent that buys data from x402 APIs privately with rx402, with a live page anyone can watch.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sodi/rx402": "*",
+    "@sodi/stealth": "*",
+    "viem": "^2.22.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -12,7 +12,8 @@
     "erc8183/sdk",
     "memory/sdk",
     "disclosure/sdk",
-    "stealth/sdk"
+    "stealth/sdk",
+    "demo-agent"
   ],
   "engines": {
     "node": ">=20"

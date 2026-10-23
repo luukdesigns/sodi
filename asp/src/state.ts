@@ -7,7 +7,8 @@ export interface PublishedSet {
   root: string;
   cid: string;
   labelCount: number;
-  txHash: string;
+  /** The updateRoot transaction; absent when the root was already on-chain (adopted on restart). */
+  txHash?: string;
   publishedAt: number;
 }
 

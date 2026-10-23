@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sodi Demo Agent</title>
+<meta name="description" content="Watch an AI agent pay for data privately with rx402 on Robinhood Chain.">
+<style>
+  :root {
+    --bg: #f4f2ec; --panel: #fffdf8; --ink: #15171b; --muted: #6a6e76; --line: #e3dfd5;
+    --accent: #1f6f5c; --accent-soft: #e2f0ea; --warn: #8a5a00; --warn-soft: #fbf0d9;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1114; --panel: #171a1f; --ink: #eceef1; --muted: #9399a3; --line: #272b33;
+      --accent: #5cc6a6; --accent-soft: #15302a; --warn: #f0c060; --warn-soft: #33290f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 40px 16px 80px; }
+  .eyebrow { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 8px 0 12px; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); font-size: 17px; max-width: 680px; margin: 0; }
+  .live { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 16px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 28px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .stat .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 13px; color: var(--muted); }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 32px; }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+  .compare > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .compare h3 { margin: 0 0 8px; font-size: 15px; }
+  .compare ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .compare li { margin: 4px 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; }
+  .feed { list-style: none; margin: 0; padding: 0; }
+  .ev { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .ev.session { border-style: dashed; }
+  .ev.notice { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+  .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+  .what { font-weight: 600; }
+  .when { font-size: 13px; color: var(--muted); }
+  .meta { font-size: 14px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+  .result { font-family: var(--mono); font-size: 13px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg); overflow-wrap: anywhere; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; font-weight: 500; }
+  a { color: var(--accent); }
+  .mono { font-family: var(--mono); font-size: 13px; }
+  footer { margin-top: 40px; font-size: 14px; color: var(--muted); }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Sodi · rx402 demo</div>
+  <h1>An AI agent paying for data, privately, in public.</h1>
+  <p class="lede">This agent buys stock prices from paid APIs every few minutes with real stablecoin payments on Robinhood Chain testnet. Every payment is on-chain. Nothing on-chain says it's this agent, or that any two payments came from the same one.</p>
+  <div class="live"><span class="dot" id="dot"></span><span id="live">connecting…</span></div>
+
+  <section class="stats">
+    <div class="stat"><div class="v" id="s-pay">–</div><div class="l">payments</div></div>
+    <div class="stat"><div class="v" id="s-spent">–</div><div class="l">USDG spent</div></div>
+    <div class="stat"><div class="v" id="s-sess">–</div><div class="l">unlinkable sessions</div></div>
+    <div class="stat"><div class="v" id="s-stealth">–</div><div class="l">to one-time merchant addresses</div></div>
+  </section>
+
+  <section class="compare">
+    <div>
+      <h3>What this page tells you</h3>
+      <ul>
+        <li>Which payments this agent made, and what it bought.</li>
+        <li>Which session addresses are its own.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What the chain shows anyone</h3>
+      <ul>
+        <li>A privacy pool withdrawal to a brand-new address. Not which deposit paid for it.</li>
+        <li>That address paying an API. Not who controls it.</li>
+        <li>Payments to one-time addresses that can't be tied to the API that received them.</li>
+      </ul>
+    </div>
+  </section>
+
+  <h2>Live activity</h2>
+  <ul class="feed" id="feed"><li class="empty">Loading…</li></ul>
+
+  <footer>
+    Built with <a href="https://github.com/rowanweiss/sodi" rel="noopener">Sodi</a>: rx402 private sessions on Privacy Pools, and ERC-5564 stealth addresses for merchants. Testnet only; amounts are test stablecoins.
+  </footer>
+</main>
+<script>
+(() => {
+  const EXPLORER = { 46630: 'https://explorer.testnet.chain.robinhood.com', 4663: 'https://explorer.chain.robinhood.com' };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const usd = (base) => { const v = Number(base) / 1e6; return v.toLocaleString(undefined, { maximumFractionDigits: 6 }); };
+  const short = (a) => `${a.slice(0, 8)}…${a.slice(-6)}`;
+  const ago = (t) => { const s = Math.floor(Date.now() / 1000) - t; if (s < 60) return 'just now'; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return new Date(t * 1000).toLocaleString(); };
+  let ex = '';
+  const link = (kind, v, text) => ex ? `<a class="mono" href="${ex}/${kind}/${esc(v)}" target="_blank" rel="noopener">${esc(text)}</a>` : `<span class="mono">${esc(text)}</span>`;
+
+  function result(r) {
+    try {
+      const j = JSON.parse(r);
+      if (j.symbol) return `${j.symbol}: ${Number(j.priceInWeth).toPrecision(4)} WETH per share`;
+      if (j.prices) return Object.entries(j.prices).map(([k, v]) => `${k} ${Number(v).toPrecision(3)}`).join(' · ') + ' (WETH)';
+    } catch {}
+    return r;
+  }
+
+  function render(feed) {
+    ex = EXPLORER[feed.agent.chainId] || '';
+    const ev = feed.events;
+    const pays = ev.filter((e) => e.kind === 'payment');
+    $('s-pay').textContent = pays.length;
+    $('s-spent').textContent = usd(pays.reduce((a, p) => a + Number(p.amount), 0));
+    $('s-sess').textContent = new Set(pays.map((p) => p.session)).size;
+    $('s-stealth').textContent = pays.filter((p) => p.stealth).length;
+    const last = ev.at(-1);
+    const fresh = last && Date.now() / 1000 - last.at < feed.agent.intervalSeconds * 3;
+    $('dot').classList.toggle('on', !!fresh);
+    $('live').textContent = last ? `${fresh ? 'Live' : 'Idle'} · last activity ${ago(last.at)} · a cycle every ${feed.agent.intervalSeconds < 60 ? feed.agent.intervalSeconds + ' s' : Math.round(feed.agent.intervalSeconds / 60) + ' min'}` : 'Waiting for the first cycle';
+
+    $('feed').innerHTML = ev.length ? ev.slice().reverse().slice(0, 200).map((e) => {
+      if (e.kind === 'session') return `<li class="ev session"><div class="row"><span class="what">New session ${link('address', e.session, short(e.session))}</span><span class="when">${ago(e.at)}</span></div>
+        <div class="meta">Funded with ${usd(e.budget)} USDG by a zero-knowledge withdrawal from the pool, submitted by a relayer: ${link('tx', e.fundingTx, short(e.fundingTx))}. The withdrawal doesn't reveal which deposit it came from.</div></li>`;
+      if (e.kind === 'notice') return `<li class="ev notice"><div class="row"><span>${esc(e.message)}</span><span class="when">${ago(e.at)}</span></div></li>`;
+      return `<li class="ev"><div class="row"><span class="what">Bought ${esc(e.api)} for ${usd(e.amount)} USDG ${e.stealth ? '<span class="tag">stealth</span>' : ''}</span><span class="when">${ago(e.at)}</span></div>
+        <div class="meta">From session ${link('address', e.session, short(e.session))} to ${e.stealth ? 'one-time address ' : 'the API at '}${link('address', e.payTo, short(e.payTo))}${e.txHash ? ` · ${link('tx', e.txHash, 'transaction')}` : ''}</div>
+        ${e.result ? `<div class="result">${esc(result(e.result))}</div>` : ''}</li>`;
+    }).join('') : '<li class="empty">No activity yet.</li>';
+  }
+
+  async function refresh() {
+    try { const r = await fetch('feed.json', { cache: 'no-store' }); render(await r.json()); }
+    catch { $('live').textContent = 'Can\'t reach the agent right now.'; $('dot').classList.remove('on'); }
+  }
+  refresh();
+  setInterval(refresh, 15000);
+})();
+</script>
+</body>
+</html>

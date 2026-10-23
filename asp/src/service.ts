@@ -81,12 +81,22 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
   const counts = countStatuses(state.deposits);
   const result: CycleResult = { newDeposits, ...counts, root, onChainRoot };
 
-  if (labels.length === 0 || root === onChainRoot) return result;
+  if (labels.length === 0) return result;
 
-  // 4. Publish.
+  // 4. Write the set, so clients can fetch it, then publish its root if the chain doesn't have it yet.
   const cid = await documentCid(doc);
   mkdirSync(ctx.setsDir, { recursive: true });
   writeFileSync(join(ctx.setsDir, `${cid}.json`), encodeDocument(doc));
+
+  if (root === onChainRoot) {
+    // Already on-chain, e.g. after a restart with fresh state: adopt it so the API serves the set.
+    if (state.published.at(-1)?.root !== root.toString()) {
+      state.published.push({ root: root.toString(), cid, labelCount: labels.length, publishedAt: now() });
+      saveState(ctx.stateFile, state);
+      log(`on-chain root ${root} matches the approved set (${labels.length} labels, cid ${cid})`);
+    }
+    return result;
+  }
 
   if (ctx.dryRun || !ctx.walletClient) {
     log(`dry run: would publish root ${root} (${labels.length} labels, cid ${cid})`);
