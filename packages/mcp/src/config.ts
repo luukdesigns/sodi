@@ -1,0 +1,70 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+import {
+  FileStore,
+  HttpRelayer,
+  Rx402Client,
+  WithdrawalProver,
+  aspAssociationSet,
+} from '@sodi/rx402';
+import { type Address, type Hex, createPublicClient, createWalletClient, defineChain, http, parseUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+import type { McpOptions } from './tools.js';
+
+const env = (name: string, fallback?: string): string => {
+  const v = process.env[name] ?? fallback;
+  if (v === undefined || v === '') throw new Error(`${name} is required`);
+  return v;
+};
+const usdg = (s: string) => parseUnits(s, 6);
+
+/** Builds the rx402 client and MCP limits from environment variables (see README). */
+export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOptions }> {
+  const rpcUrl = env('RPC_URL', 'https://rpc.testnet.chain.robinhood.com');
+  const deploymentFile = env(
+    'DEPLOYMENT_FILE',
+    resolve(import.meta.dirname, '../../../contracts/deployments/46630.json'),
+  );
+  const deployment = JSON.parse(readFileSync(deploymentFile, 'utf8'));
+  const chain = defineChain({
+    id: deployment.chainId,
+    name: 'Robinhood Chain',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  });
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+
+  const ownerKey = process.env.OWNER_PRIVATE_KEY as Hex | undefined;
+  const ownerWallet = ownerKey
+    ? createWalletClient({ chain, account: privateKeyToAccount(ownerKey), transport: http(rpcUrl) })
+    : undefined;
+
+  const client = new Rx402Client({
+    publicClient,
+    ownerWallet,
+    mnemonic: env('RX402_MNEMONIC'),
+    entrypoint: deployment.contracts.Entrypoint as Address,
+    pool: deployment.pools.USDG.pool as Address,
+    asset: deployment.pools.USDG.asset as Address,
+    poolDeploymentBlock: BigInt(deployment.deploymentBlock),
+    relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403')),
+    prover: new WithdrawalProver(),
+    associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
+    store: new FileStore(env('RX402_STORE', join(homedir(), '.sodi', 'rx402.json'))),
+    policy: {
+      budget: usdg(env('RX402_SESSION_BUDGET', '1')),
+      maxPayments: Number(env('RX402_MAX_PAYMENTS_PER_SESSION', '20')),
+      maxAgeSeconds: Number(env('RX402_MAX_SESSION_AGE', '3600')),
+      maxPaymentAmount: usdg(env('RX402_MAX_PER_REQUEST', '0.10')),
+    },
+  });
+
+  const options: McpOptions = {
+    maxTotalSpend: usdg(env('RX402_MAX_TOTAL_SPEND', '5')),
+    allowedHosts: (process.env.RX402_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+  };
+  return { client, options };
+}

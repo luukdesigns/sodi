@@ -1,0 +1,65 @@
+import { createServer, type Server } from 'node:http';
+
+import { RelayError, type RelaySubmitter, type RelayerSettings, checkTerms, parseRelayRequest } from './relay.js';
+
+const MAX_BODY = 16 * 1024;
+
+/**
+ *   GET  /health   status
+ *   GET  /quote    fee terms; clients bake these into the withdrawal they prove
+ *   POST /relay    { withdrawal, proof, scope } -> { txHash }
+ */
+export function startServer(
+  port: number,
+  chainId: number,
+  settings: RelayerSettings,
+  submitter: RelaySubmitter,
+  log: (m: string) => void = () => {},
+): Server {
+  const quote = {
+    chainId,
+    entrypoint: settings.entrypoint,
+    feeRecipient: settings.feeRecipient,
+    relayFeeBPS: settings.relayFeeBPS.toString(),
+    minWithdrawal: settings.minWithdrawal.toString(),
+  };
+
+  const server = createServer((req, res) => {
+    const send = (status: number, body: unknown) => {
+      res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+      res.end(JSON.stringify(body));
+    };
+    const path = (req.url ?? '/').split('?')[0];
+
+    if (req.method === 'GET' && path === '/health') return send(200, { ok: true, chainId });
+    if (req.method === 'GET' && path === '/quote') return send(200, quote);
+    if (req.method !== 'POST' || path !== '/relay') return send(404, { error: 'not found' });
+
+    let raw = '';
+    let tooBig = false;
+    req.on('data', (chunk: Buffer) => {
+      raw += chunk;
+      if (raw.length > MAX_BODY) {
+        tooBig = true;
+        req.destroy();
+      }
+    });
+    req.on('end', async () => {
+      if (tooBig) return send(413, { error: 'request too large' });
+      try {
+        const parsed = parseRelayRequest(JSON.parse(raw));
+        const { recipient, withdrawn } = checkTerms(parsed, settings);
+        const txHash = await submitter.submit(parsed);
+        log(`relayed ${withdrawn} to ${recipient} in ${txHash}`);
+        send(200, { txHash });
+      } catch (err) {
+        const status = err instanceof RelayError ? err.status : err instanceof SyntaxError ? 400 : 500;
+        const message = err instanceof Error ? err.message : String(err);
+        log(`rejected relay (${status}): ${message}`);
+        send(status, { error: status === 500 ? 'internal error' : message });
+      }
+    });
+  });
+  server.listen(port);
+  return server;
+}

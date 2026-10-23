@@ -164,6 +164,21 @@ export class Rx402Client {
     return this.config.store.load().notes.reduce((sum, n) => sum + BigInt(n.value), 0n);
   }
 
+  /** The session the next payment would use, with what it has left. */
+  currentSession(): (Session & { remaining: bigint; ageSeconds: number }) | undefined {
+    const s = this.config.store.load().sessions.at(-1);
+    if (!s) return undefined;
+    return { ...s, remaining: BigInt(s.budget) - BigInt(s.spent), ageSeconds: this.now() - s.openedAt };
+  }
+
+  get policy(): Readonly<SessionPolicy> {
+    return this.config.policy;
+  }
+
+  get canDeposit(): boolean {
+    return Boolean(this.config.ownerWallet?.account);
+  }
+
   // ---------------------------------------------------------------- sessions
 
   /**
@@ -252,13 +267,21 @@ export class Rx402Client {
    * `fetch` that pays x402 `402 Payment Required` responses from a private session, opening or
    * rotating sessions as needed.
    */
-  async fetch(input: string | URL, init: RequestInit = {}): Promise<PaidResponse> {
+  async fetch(
+    input: string | URL,
+    init: RequestInit = {},
+    options: { maxPaymentAmount?: bigint } = {},
+  ): Promise<PaidResponse> {
     const first = await fetch(input, init);
     if (first.status !== 402) return { response: first };
 
     const required = await parsePaymentRequired(first);
     const chainId = await this.getChainId();
-    const requirement = selectRequirement(required, chainId, this.config.asset, this.config.policy.maxPaymentAmount);
+    // A per-call cap can only tighten the policy, never loosen it.
+    const policyCap = this.config.policy.maxPaymentAmount;
+    const cap =
+      options.maxPaymentAmount !== undefined && options.maxPaymentAmount < policyCap ? options.maxPaymentAmount : policyCap;
+    const requirement = selectRequirement(required, chainId, this.config.asset, cap);
 
     let state = this.config.store.load();
     let session = this.usableSession(state, requirement.amount);

@@ -4,6 +4,8 @@ export { WithdrawalProver, defaultArtifactPaths, type ArtifactPaths } from './pr
 export { FileStore, MemoryStore, type PoolNote, type Session, type Store, type WalletState } from './store.js';
 export * from './x402.js';
 export * from './crypto.js';
+export { entrypointAbi, erc20Abi, poolAbi } from './chain.js';
+export { HttpRelayer, type RelayQuote } from './http-relayer.js';
 
 /** Fetches approved labels from a Sodi approval service (`GET /association-set`). */
 export function aspAssociationSet(baseUrl: string): () => Promise<bigint[]> {
