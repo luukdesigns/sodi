@@ -1,7 +1,27 @@
 {
   "name": "@sodi/dashboard",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "Owner dashboard for Sodi agents.",
-  "license": "Apache-2.0"
+  "description": "Owner dashboard for Sodi agents: kill switch, spend limits, sessions and payment history.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sodi/rx402": "*",
+    "viem": "^2.22.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

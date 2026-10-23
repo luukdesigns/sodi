@@ -20,6 +20,7 @@ import {
   withdrawalContext,
   withdrawalSecrets,
 } from './crypto.js';
+import { type ControlSource, type Controls, PaymentBlockedError } from './controls.js';
 import type { WithdrawalProver } from './prover.js';
 import type { Relayer } from './relayer.js';
 import type { PoolNote, Session, Store, WalletState } from './store.js';
@@ -59,6 +60,8 @@ export interface Rx402Config {
    * paid normally either way.
    */
   stealth?: boolean;
+  /** Owner controls (kill switch, caps, allowed hosts), re-read before every payment. */
+  controls?: ControlSource;
   now?: () => number;
 }
 
@@ -182,6 +185,11 @@ export class Rx402Client {
     return this.config.policy;
   }
 
+  /** The owner controls currently in force, if any are configured. */
+  get controls(): Controls | undefined {
+    return this.config.controls?.load();
+  }
+
   get canDeposit(): boolean {
     return Boolean(this.config.ownerWallet?.account);
   }
@@ -256,6 +264,11 @@ export class Rx402Client {
     return session;
   }
 
+  /** Total paid to merchants since `sinceSeconds`. */
+  spentSince(sinceSeconds: number): bigint {
+    return (this.config.store.load().payments ?? []).filter((p) => p.at >= sinceSeconds).reduce((sum, p) => sum + BigInt(p.amount), 0n);
+  }
+
   /** The current session if it can still pay `amount` under the rotation policy. */
   private usableSession(state: WalletState, amount: bigint): Session | undefined {
     const s = state.sessions.at(-1);
@@ -284,11 +297,31 @@ export class Rx402Client {
 
     const required = await parsePaymentRequired(first);
     const chainId = await this.getChainId();
-    // A per-call cap can only tighten the policy, never loosen it.
-    const policyCap = this.config.policy.maxPaymentAmount;
-    const cap =
-      options.maxPaymentAmount !== undefined && options.maxPaymentAmount < policyCap ? options.maxPaymentAmount : policyCap;
-    const requirement = selectRequirement(required, chainId, this.config.asset, cap);
+    const controls = this.config.controls?.load();
+    const url = new URL(input);
+    if (controls?.paused) throw new PaymentBlockedError('paused', 'payments are paused by the owner');
+    if (controls?.allowedHosts?.length && !controls.allowedHosts.includes(url.host)) {
+      throw new PaymentBlockedError('host-not-allowed', `${url.host} is not on the owner's allowed list`);
+    }
+    // Per-call caps and owner controls can only tighten the policy, never loosen it.
+    let cap = this.config.policy.maxPaymentAmount;
+    for (const c of [options.maxPaymentAmount, controls?.maxPaymentAmount === undefined ? undefined : BigInt(controls.maxPaymentAmount)]) {
+      if (c !== undefined && c < cap) cap = c;
+    }
+    let requirement = selectRequirement(required, chainId, this.config.asset, this.config.policy.maxPaymentAmount);
+    if (requirement.amount > cap) {
+      try {
+        requirement = selectRequirement(required, chainId, this.config.asset, cap);
+      } catch {
+        throw new PaymentBlockedError('over-request-cap', `price ${requirement.amount} is above the cap of ${cap}`);
+      }
+    }
+    if (controls?.dailyLimit !== undefined) {
+      const spent = this.spentSince(this.now() - 86_400);
+      if (spent + requirement.amount > BigInt(controls.dailyLimit)) {
+        throw new PaymentBlockedError('over-daily-limit', `paying ${requirement.amount} would pass the 24-hour limit (${spent} already spent)`);
+      }
+    }
 
     let state = this.config.store.load();
     let session = this.usableSession(state, requirement.amount);
@@ -312,6 +345,14 @@ export class Rx402Client {
       const s = state.sessions.find((x) => x.address === session!.address)!;
       s.spent = (BigInt(s.spent) + requirement.amount).toString();
       s.payments += 1;
+      (state.payments ??= []).push({
+        at: this.now(),
+        resource: `${url.origin}${url.pathname}`,
+        amount: requirement.amount.toString(),
+        payTo: signed.authorization.to,
+        stealth: Boolean(stealth),
+        session: account.address,
+      });
       this.config.store.save(state);
       return {
         response,

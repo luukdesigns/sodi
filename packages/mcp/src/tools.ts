@@ -57,6 +57,17 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
           spentThisRunUsdg: usd(totalSpent),
           maxTotalThisRunUsdg: usd(options.maxTotalSpend),
         },
+        ownerControls: (() => {
+          const c = client.controls;
+          if (!c) return null;
+          return {
+            paused: c.paused,
+            maxPerRequestUsdg: c.maxPaymentAmount ? usd(BigInt(c.maxPaymentAmount)) : null,
+            dailyLimitUsdg: c.dailyLimit ? usd(BigInt(c.dailyLimit)) : null,
+            spentLast24hUsdg: usd(client.spentSince(Math.floor(Date.now() / 1000) - 86_400)),
+            allowedHosts: c.allowedHosts ?? [],
+          };
+        })(),
       });
     },
   );

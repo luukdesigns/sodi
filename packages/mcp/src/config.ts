@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import {
+  FileControls,
   FileStore,
   HttpRelayer,
   Rx402Client,
@@ -55,6 +56,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
     associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
     stealth: env('RX402_STEALTH', 'true') !== 'false',
     store: new FileStore(env('RX402_STORE', join(homedir(), '.sodi', 'rx402.json'))),
+    controls: new FileControls(env('RX402_CONTROLS', join(homedir(), '.sodi', 'controls.json'))),
     policy: {
       budget: usdg(env('RX402_SESSION_BUDGET', '1')),
       maxPayments: Number(env('RX402_MAX_PAYMENTS_PER_SESSION', '20')),

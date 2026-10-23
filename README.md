@@ -39,7 +39,7 @@ sodi/
 │   └── mcp/          MCP server: private x402 payments as agent tools (@sodi/mcp)
 ├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses
-├── dashboard/        Owner app: spend limits, kill switch, view keys
+├── dashboard/        Owner app: kill switch, spend limits, sessions and payment history
 ├── a2a/              Experimental: encrypted agent-to-agent messaging (MIT)
 ├── erc8183/          Experimental: confidential deliverables hook for ERC-8183 jobs
 ├── memory/           Experimental: encrypted, versioned agent memory
@@ -70,7 +70,8 @@ sodi/
 - [x] rx402 SDK: private sessions paying x402 v1 and v2 merchants, tested end to end on a testnet fork
 - [x] Relayer service and MCP server, tested together end to end on a testnet fork
 - [x] rx402 live on testnet: deposit, approval, relayed ZK sessions, ordinary and stealth x402 payments ([transactions](./contracts/deployments/46630.json))
-- [ ] Owner dashboard and a public demo agent
+- [x] Owner dashboard: kill switch, spend limits, payment history ([dashboard](./dashboard))
+- [ ] Public demo agent
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))
 

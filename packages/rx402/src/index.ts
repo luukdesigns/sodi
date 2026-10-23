@@ -1,7 +1,16 @@
 export { Rx402Client, type PaidResponse, type Rx402Config, type SessionPolicy } from './client.js';
 export { WalletRelayer, type Relayer } from './relayer.js';
 export { WithdrawalProver, defaultArtifactPaths, type ArtifactPaths } from './prover.js';
-export { FileStore, MemoryStore, type PoolNote, type Session, type Store, type WalletState } from './store.js';
+export { FileStore, MemoryStore, type PaymentRecord, type PoolNote, type Session, type Store, type WalletState } from './store.js';
+export {
+  type BlockReason,
+  type ControlSource,
+  type Controls,
+  FileControls,
+  MemoryControls,
+  PaymentBlockedError,
+  defaultControls,
+} from './controls.js';
 export * from './x402.js';
 export * from './crypto.js';
 export { entrypointAbi, erc20Abi, poolAbi } from './chain.js';

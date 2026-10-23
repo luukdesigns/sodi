@@ -33,12 +33,26 @@ export interface Session {
   fundingTx: Hex;
 }
 
+/** One x402 payment, kept for the owner's history. */
+export interface PaymentRecord {
+  at: number;
+  /** Origin and path paid for (no query string). */
+  resource: string;
+  amount: string;
+  /** Who was paid: the merchant's address, or a one-time stealth address. */
+  payTo: Address;
+  stealth: boolean;
+  session: Address;
+}
+
 export interface WalletState {
   version: 1;
   notes: PoolNote[];
   /** Deposits made per scope, so the next deposit uses fresh secrets. */
   depositCounts: Record<string, number>;
   sessions: Session[];
+  /** Payment history; absent in stores written before it existed. */
+  payments?: PaymentRecord[];
 }
 
 export interface Store {

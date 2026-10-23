@@ -183,7 +183,7 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
   it('respects a per-call price cap', async () => {
     const r = await call('rx402_fetch', { url: 'http://127.0.0.1:28404/news', max_price_usdg: '0.02' });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/no acceptable payment option/);
+    expect(r.content[0]!.text).toMatch(/above the cap/);
     expect(await balance(MERCHANT)).toBe(10_000n);
   }, 60_000);
 
