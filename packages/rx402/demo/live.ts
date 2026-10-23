@@ -149,6 +149,11 @@ try {
   const found = await new StealthMerchant(stealthKeys).scan(publicClient, { fromBlock: startBlock, caller: SETTLER });
   console.log(`   stealth payments found from announcements: ${found.length}, ${found.map((f) => `${usd(f.amount ?? 0n)} at ${f.stealthAddress.slice(0, 10)}…`).join(', ')}`);
   console.log(`   pool balance left for the agent: ${usd(client.poolBalance())}`);
+} catch (err) {
+  console.error(err);
+  process.exitCode = 1;
 } finally {
   for (const s of [asp, relayer, plain.server, stealthShop.server]) s.close();
+  // The prover's worker threads keep Node alive after the last proof, so exit explicitly.
+  process.exit();
 }

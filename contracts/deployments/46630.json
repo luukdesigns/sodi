@@ -19,9 +19,35 @@
       "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
       "pool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76",
       "scope": "15275348139274045583819307907082263242021424355600177454175009643064466885852",
-      "minimumDepositAmount": "1000000",
+      "minimumDepositAmount": "100000",
       "vettingFeeBPS": 0,
-      "maxRelayFeeBPS": 100
+      "maxRelayFeeBPS": 100,
+      "configChanges": [
+        {
+          "date": "2026-10-23",
+          "minimumDepositAmount": "100000",
+          "reason": "testnet USDG is scarce; lowered from 1 USDG to 0.1 USDG",
+          "tx": "0x388360e9568b5422f6d2b8ecc2beae289790e04e05a66ecf56d98a4c5883c81f"
+        }
+      ]
+    }
+  },
+  "liveRun": {
+    "description": "Full rx402 stack (packages/rx402/demo/live.ts) run live on 2026-10-23: deposit, approval, two relayed ZK sessions, two ordinary and two stealth x402 payments",
+    "owner": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+    "relayer": "0xE1F276aA58A95f0Ab800fd187eCDcf6E23296Bd7",
+    "facilitator": "0x41db96BB10977743C14b4DcBA3A02617b5f356Ae",
+    "deposit": "0x5d3dfbcedc72f5bd74cd005803d7ba2bb5d3d43e63c361ea6d752c8afe82b6cc",
+    "aspRoot": "0xc9dab352a1025e861bcaa615c21912eacf05982ab4aa3fd31cc09c329f1b593b",
+    "sessions": {
+      "0x1dc913FA0e09AE9c967dd7aF2323fE78B8497C75": "0x3b535e31d225f009227607c49729552ec36df58f0b1193d319ef38ac69680648",
+      "0x1f6A3c75B5235cD7D66f02B9f87A837E3B7f70eE": "0x7315b2c22d20a17f877f64967212267a051a0d5907429917bb19067eba6a8ff6"
+    },
+    "payments": {
+      "ordinary 1": "0x61e5c3f389c1e2771c2b2057e80380f48e4daeaaed05c366daa9b7c6cc1da668",
+      "ordinary 2": "0x553dead942378d592a541cbafbf9cb765c058b665997f4b8217d41f275eaafdb",
+      "stealth to 0x08bd2e500ab1C41f922e76709C8292f004082311": "0x0358393442097df7c5d2dddc664d4a4e610ede171d28a94d95b36ba6719e96c3",
+      "stealth to 0x277e3B95A97Df85E1e1736C8bd91Dea3f665f070": "0x0be91637d0d4461fd096340b58330d55f6df7904e7fdb2d10d2e49462c33b688"
     }
   }
 }

@@ -53,7 +53,7 @@ Owner and postman are the testnet deployer, `0xF4411EC2705299FCe6f6Cd99e432AEe88
 1. Deploys the Groth16 `WithdrawalVerifier` and `CommitmentVerifier`.
 2. Deploys the `Entrypoint` behind an ERC-1967 (UUPS) proxy and initializes it with `OWNER_ADDRESS` and `POSTMAN_ADDRESS`.
 3. Deploys a `PrivacyPoolComplex` for USDG.
-4. Registers the pool with the Entrypoint (minimum deposit 1 USDG, 0% vetting fee, 1% max relay fee), if the deployer is the owner.
+4. Registers the pool with the Entrypoint (minimum deposit 1 USDG, 0% vetting fee, 1% max relay fee), if the deployer is the owner. On testnet the minimum was later lowered to 0.1 USDG, because testnet USDG is scarce; see `deployments/46630.json`.
 
 Before deploying, it checks that the configured USDG address is a contract with 6 decimals and that you are on chain 46630.
 

@@ -69,6 +69,7 @@ sodi/
 - [x] Approval service that screens deposits and publishes the approved set
 - [x] rx402 SDK: private sessions paying x402 v1 and v2 merchants, tested end to end on a testnet fork
 - [x] Relayer service and MCP server, tested together end to end on a testnet fork
+- [x] rx402 live on testnet: deposit, approval, relayed ZK sessions, ordinary and stealth x402 payments ([transactions](./contracts/deployments/46630.json))
 - [ ] Owner dashboard and a public demo agent
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))
