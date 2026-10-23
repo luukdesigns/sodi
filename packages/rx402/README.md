@@ -1,11 +1,75 @@
 # @sodi/rx402
 
-Agent SDK for private x402 payments.
+Private x402 payments for AI agents.
 
-Planned API: a drop-in replacement for `fetch` that handles the full rx402 flow.
+An agent's owner deposits USDG into Sodi's Privacy Pool once. When the agent hits an x402 paywall, rx402 withdraws a small budget to a **brand-new session address** using a zero-knowledge proof, then pays the merchant from that address with a standard EIP-3009 signature. Merchants see an ordinary x402 payment from an address with no history. Nothing on-chain links it to the owner, or to the agent's other sessions.
 
-1. Opens a session by proving pool ownership and withdrawing a budget to a fresh address via the relayer.
-2. On `402 Payment Required`, signs a USDG EIP-3009 authorization from the session address.
-3. Rotates to a new session when the budget or time limit is reached.
+## Usage
 
-Status: not yet implemented.
+```ts
+import { createPublicClient, createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import {
+  FileStore, Rx402Client, WalletRelayer, WithdrawalProver, aspAssociationSet,
+} from '@sodi/rx402';
+import deployment from '../../contracts/deployments/46630.json';
+
+const client = new Rx402Client({
+  publicClient,
+  ownerWallet,                         // only used for deposits
+  mnemonic: process.env.RX402_MNEMONIC!,
+  entrypoint: deployment.contracts.Entrypoint,
+  pool: deployment.pools.USDG.pool,
+  asset: deployment.pools.USDG.asset,
+  poolDeploymentBlock: BigInt(deployment.deploymentBlock),
+  relayer: new WalletRelayer(relayerWallet, publicClient, deployment.contracts.Entrypoint),
+  prover: new WithdrawalProver(),
+  associationSet: aspAssociationSet('http://localhost:8402'),   // Sodi approval service
+  store: new FileStore('.rx402/wallet.json'),
+  policy: {
+    budget: 1_000_000n,          // 1 USDG per session
+    maxPayments: 20,             // rotate after 20 payments...
+    maxAgeSeconds: 3600,         // ...or after an hour
+    maxPaymentAmount: 100_000n,  // never pay more than 0.10 USDG per request
+  },
+});
+
+await client.deposit(10_000_000n);   // public: 10 USDG into the pool
+// wait for the approval service to approve the deposit, then:
+const { response, payment } = await client.fetch('https://api.example.com/paid-data');
+```
+
+`client.fetch` behaves like `fetch`. On a `402 Payment Required` it picks the USDG option on this chain, opens or rotates a session if needed, signs the payment and retries.
+
+## How a payment works
+
+1. **Deposit (public).** The owner deposits into the pool. Secrets are derived from the mnemonic, exactly as in the 0xbow Privacy Pools SDK, so the same mnemonic recovers the deposit in any compatible wallet.
+2. **Approval.** The [approval service](../../asp) screens the deposit and adds its label to the association set.
+3. **Open a session (private).** rx402 proves in zero knowledge that it owns an approved, unspent commitment, and withdraws `budget` to a fresh address. A relayer submits the transaction, so the session address never needs gas. The rest of the deposit stays in the pool as a new commitment.
+4. **Pay.** The session signs an EIP-3009 `transferWithAuthorization` for the merchant. Any x402 facilitator settles it. Both x402 v1 (`X-PAYMENT`) and v2 (`PAYMENT-SIGNATURE`) are supported.
+5. **Rotate.** After `maxPayments`, `maxAgeSeconds`, or when the budget runs out, the next payment opens a new session from the remaining balance.
+
+## What is private
+
+| Hidden | Visible |
+| --- | --- |
+| Which deposit a session was funded from | That the pool paid some amount to a session address |
+| The link between the owner and any session | Payments within one session (same address) |
+| The link between one session and the next | Amounts and timing |
+
+Privacy grows with the number of users in the pool. Round budgets (for example always 1 USDG) and a delay between deposit and first session make sessions harder to correlate.
+
+## Verified
+
+- **Unit tests** (`npm test`): key derivation, commitments, withdrawal context and Merkle proofs match the 0xbow SDK source exactly; the EIP-712 domain matches USDG's on-chain `DOMAIN_SEPARATOR`; x402 v1 and v2 parsing, selection and headers.
+- **End to end** (`test/e2e/run-fork.sh`): on a local fork of Robinhood Chain testnet, against the deployed Sodi pool. A deposit is approved by the approval service, real Groth16 proofs are accepted by the deployed verifier, a v1 and a v2 merchant are paid from a session address, and a policy-driven rotation funds a second session from the first withdrawal's change.
+
+Circuit artifacts are loaded from the pinned Privacy Pools submodule and checked against the SHA-256 hashes 0xbow publishes; mismatching files are refused.
+
+## Not done yet
+
+- **Leftover session funds** stay at the old session address after rotation. Sweeping them back into the pool is planned.
+- **The store file holds session private keys.** Keep it as secure as a wallet; each key only controls one session's budget.
+- **Recovery from mnemonic alone** (scanning the chain for past deposits) is not implemented; the store is needed.
+- **Relayer:** `WalletRelayer` relays from a wallet you run. A hosted relayer with fees is the next component.
+- **Proof time:** a few seconds per session on a laptop, so the first payment in each session is slower than the rest.

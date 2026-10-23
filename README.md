@@ -35,7 +35,7 @@ Privacy strengthens as more agents share the pool. Smaller budgets and faster ro
 sodi/
 ├── contracts/        Pool deployment and Sodi contracts (Foundry)
 ├── packages/
-│   ├── rx402/        Agent SDK: sessions, signing, rotation (@sodi/rx402)
+│   ├── rx402/        Agent SDK: deposits, private sessions, x402 payments (@sodi/rx402)
 │   └── mcp/          MCP server so agents can use rx402 directly
 ├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses
@@ -53,7 +53,8 @@ sodi/
 
 - [x] USDG privacy pool live on Robinhood Chain testnet ([addresses](./contracts/README.md#deployments))
 - [x] Approval service that screens deposits and publishes the approved set
-- [ ] rx402 SDK and relayer, paying a test x402 endpoint end to end
+- [x] rx402 SDK: private sessions paying x402 v1 and v2 merchants, tested end to end on a testnet fork
+- [ ] Hosted relayer, MCP server and owner dashboard
 - [ ] MCP server, owner dashboard and a demo agent
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Sodi L3 for per-payment privacy and near-zero fees
