@@ -47,3 +47,6 @@ erc8183/contracts/broadcast/**/dry-run/
 memory/contracts/out/
 memory/contracts/cache/
 memory/contracts/broadcast/**/dry-run/
+stealth/contracts/out/
+stealth/contracts/cache/
+stealth/contracts/broadcast/**/dry-run/

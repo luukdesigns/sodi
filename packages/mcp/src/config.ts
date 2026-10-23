@@ -53,6 +53,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
     relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403')),
     prover: new WithdrawalProver(),
     associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
+    stealth: env('RX402_STEALTH', 'true') !== 'false',
     store: new FileStore(env('RX402_STORE', join(homedir(), '.sodi', 'rx402.json'))),
     policy: {
       budget: usdg(env('RX402_SESSION_BUDGET', '1')),

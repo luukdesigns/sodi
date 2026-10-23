@@ -52,6 +52,7 @@ For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/
 | `DEPLOYMENT_FILE` | `contracts/deployments/46630.json` | |
 | `RX402_STORE` | `~/.sodi/rx402.json` | Notes and session keys; keep private |
 | `RX402_SESSION_BUDGET` | `1` | USDG per session |
+| `RX402_STEALTH` | `true` | Pay merchants that offer a stealth address at a one-time address; `false` always pays `payTo` |
 | `RX402_MAX_PAYMENTS_PER_SESSION` | `20` | |
 | `RX402_MAX_SESSION_AGE` | `3600` | seconds |
 | `OWNER_PRIVATE_KEY` | unset | Enables `rx402_deposit` |

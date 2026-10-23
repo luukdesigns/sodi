@@ -46,7 +46,7 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
   const { state, publicClient } = ctx;
 
   // 1. Scan new deposits.
-  const head = await publicClient.getBlockNumber();
+  const head = await publicClient.getBlockNumber({ cacheTime: 0 });
   const from = BigInt(state.lastScannedBlock + 1);
   let newDeposits = 0;
   if (from <= head) {

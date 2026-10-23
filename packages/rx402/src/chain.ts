@@ -44,7 +44,7 @@ export async function stateTreeLeaves(
   fromBlock: bigint,
   chunkSize = 10_000n,
 ): Promise<bigint[]> {
-  const head = await client.getBlockNumber();
+  const head = await client.getBlockNumber({ cacheTime: 0 });
   const leaves: LeafEvent[] = [];
   for (let start = fromBlock; start <= head; start += chunkSize) {
     const end = start + chunkSize - 1n > head ? head : start + chunkSize - 1n;

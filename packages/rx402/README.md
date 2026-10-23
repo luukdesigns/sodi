@@ -41,6 +41,8 @@ const { response, payment } = await client.fetch('https://api.example.com/paid-d
 
 `client.fetch` behaves like `fetch`. On a `402 Payment Required` it picks the USDG option on this chain, opens or rotates a session if needed, signs the payment and retries.
 
+If the merchant offers a [stealth address](../../stealth), the payment goes to a fresh one-time address instead of its public `payTo`, so the merchant's side is private too. Pass `stealth: false` to turn this off.
+
 ## How a payment works
 
 1. **Deposit (public).** The owner deposits into the pool. Secrets are derived from the mnemonic, exactly as in the 0xbow Privacy Pools SDK, so the same mnemonic recovers the deposit in any compatible wallet.

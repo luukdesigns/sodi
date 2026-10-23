@@ -106,7 +106,7 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
           contentType: response.headers.get('content-type'),
           body: text.length > MAX_BODY_CHARS ? `${text.slice(0, MAX_BODY_CHARS)}… [truncated]` : text,
           payment: payment
-            ? { paidUsdg: usd(payment.amount), payTo: payment.payTo, fromSession: payment.from }
+            ? { paidUsdg: usd(payment.amount), payTo: payment.payTo, fromSession: payment.from, stealth: payment.stealth }
             : null,
         });
       } catch (err) {

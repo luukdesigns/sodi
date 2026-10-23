@@ -44,6 +44,7 @@ sodi/
 ├── erc8183/          Experimental: confidential deliverables hook for ERC-8183 jobs
 ├── memory/           Experimental: encrypted, versioned agent memory
 ├── disclosure/       Experimental: scoped, verifiable disclosure to auditors
+├── stealth/          Experimental: opt-in stealth addresses for x402 merchants
 ├── chain/            Draft: Sodi L3, an Orbit chain settling to Robinhood Chain
 └── docs/             Specs and guides
 ```
@@ -53,6 +54,7 @@ sodi/
 - **[Sodi A2A](./a2a)**: private agent-to-agent messaging on a public chain. Agents negotiate and bid on-chain while the contract only sees ciphertext. Live on Robinhood Chain testnet; MIT licensed.
 - **[ERC-8183 Privacy Hook](./erc8183)**: confidential deliverables for on-chain work. Jobs stay public and verifiable; only the client and evaluator can read the deliverable. Runs against the unmodified ERC-8183 reference. Live on Robinhood Chain testnet.
 - **[Sodi Memory](./memory)**: encrypted, versioned memory for agents, recoverable from the wallet alone, with tamper-proof blob storage and safe concurrent writes. Live on Robinhood Chain testnet.
+- **[Sodi Stealth](./stealth)**: merchants get paid at a new one-time address every time (ERC-5564), found and swept from the chain alone. Opt in per merchant; rx402 agents use it automatically. Live on Robinhood Chain testnet.
 - **[Sodi Disclosure](./disclosure)**: show an auditor exactly the messages, memory, job deliverables or deposits you choose, verified against the chain, with revocable ongoing access. Works across every Sodi component.
 
 ## Built on

@@ -1,3 +1,4 @@
+import type { StealthProof } from '@sodi/stealth';
 import { type Address, type Hex, type LocalAccount, toHex } from 'viem';
 
 /**
@@ -15,7 +16,8 @@ export interface PaymentRequirement {
   payTo: Address;
   amount: bigint;
   maxTimeoutSeconds: number;
-  extra?: { name?: string; version?: string };
+  /** Token EIP-712 domain (`name`, `version`) and extensions such as a stealth offer. */
+  extra?: { name?: string; version?: string; [key: string]: unknown };
   /** The requirement exactly as the server sent it (echoed back in v2). */
   raw: Record<string, unknown>;
 }
@@ -94,16 +96,20 @@ export interface Authorization {
   nonce: Hex;
 }
 
-/** Signs an EIP-3009 transfer authorization from the session account. */
+/**
+ * Signs an EIP-3009 transfer authorization from the session account, to `payTo` or, for a merchant
+ * that offered one, to a one-time stealth address.
+ */
 export async function signAuthorization(
   account: LocalAccount,
   requirement: PaymentRequirement,
   chainId: number,
   nowSeconds = Math.floor(Date.now() / 1000),
+  to: Address = requirement.payTo,
 ): Promise<{ authorization: Authorization; signature: Hex }> {
   const authorization: Authorization = {
     from: account.address,
-    to: requirement.payTo,
+    to,
     value: requirement.amount,
     validAfter: 0n,
     validBefore: BigInt(nowSeconds + requirement.maxTimeoutSeconds),
@@ -138,6 +144,7 @@ export function paymentHeader(
   version: 1 | 2,
   requirement: PaymentRequirement,
   signed: { authorization: Authorization; signature: Hex },
+  stealth?: StealthProof,
 ): [string, string] {
   const authorization = {
     from: signed.authorization.from,
@@ -147,7 +154,7 @@ export function paymentHeader(
     validBefore: signed.authorization.validBefore.toString(),
     nonce: signed.authorization.nonce,
   };
-  const payload = { signature: signed.signature, authorization };
+  const payload = { signature: signed.signature, authorization, ...(stealth ? { stealth } : {}) };
   if (version === 2) {
     return ['PAYMENT-SIGNATURE', encodeBase64Json({ x402Version: 2, accepted: requirement.raw, payload })];
   }

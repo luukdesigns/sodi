@@ -11,7 +11,8 @@
     "a2a/sdk",
     "erc8183/sdk",
     "memory/sdk",
-    "disclosure/sdk"
+    "disclosure/sdk",
+    "stealth/sdk"
   ],
   "engines": {
     "node": ">=20"

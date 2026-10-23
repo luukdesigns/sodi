@@ -1,0 +1,28 @@
+{
+  "network": "Robinhood Chain Testnet",
+  "chainId": 46630,
+  "SodiStealthSettler": "0x271320B5dF6fc8Dc778304f53B1D7b01B0c2855E",
+  "deploymentBlock": 141471852,
+  "deploymentTx": "0xd63ee9b871d23f14e591861bdd634bf5b1d50ec69aad13e7eef4366cbc40169d",
+  "TestDollar3009": "0xb7226697f7dF4D260C72deA506C4f7e14c7761F1",
+  "TestDollar3009Tx": "0xa923b1eb4c39a2b06478d6cfb63011b8626fb0870700fcf08819613eb608e2e0",
+  "canonical": {
+    "ERC5564Announcer": "0x55649E01B5Df198D18D95b5cc5051630cfD45564",
+    "ERC6538Registry": "0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538"
+  },
+  "demo": {
+    "description": "Stealth x402 payments (sdk/demo/stealth-pay.ts) run live on 2026-10-23",
+    "merchant": "0x8151fE895E8F0C917Fc1C91581dC8AE5367e29fD",
+    "registerMetaAddress": "0x1ef8c34f233b0765b558d00dca5d63c7e7fcbcfe8c4875b280e95e9afbb25d5f",
+    "payments": {
+      "0x4b469D3728271df66F0eC878b9CBCc8311d889aC": "0x566de20d7e028f5e27278b31425450f2f66ac81a83f5b0e576aef5453a252073",
+      "0x742E4A6a42D3dcc010ff316C8Bb4DB2EeFb89dB7": "0x9054ae63d5c1d2df17044e6760995e0836d77f7b7dd0d333ca762d27d8f619d4",
+      "0xe09Dc77CF6255c90cb5f8979bb6C5b6a32e7b5D1": "0x5ed1ac32a27b71ec4055e690c25b3a8f60585f77dadfff5f9baa5986585bf8b0"
+    },
+    "sweeps": [
+      "0x7fc99cc654096458a0f4032eb4b9937c20dc36812efd7cafda5d6bcb7be37d2a",
+      "0xf9e816728cb4fe0867b48481058ade066736c432b99372e786c38a5a8cbb03e3",
+      "0xe0492e02a9da564391b95d94fcb19a47247d404835e0cf51ed8be3450f241cae"
+    ]
+  }
+}

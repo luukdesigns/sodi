@@ -1,3 +1,4 @@
+import { readStealthOffer, stealthRecipient } from '@sodi/stealth';
 import {
   type Address,
   type Hex,
@@ -52,13 +53,19 @@ export interface Rx402Config {
   associationSet: () => Promise<bigint[]>;
   store: Store;
   policy: SessionPolicy;
+  /**
+   * Pay merchants that offer a stealth address (the x402 stealth extension) at a fresh one-time
+   * address instead of their public `payTo`. On by default; merchants that don't offer one are
+   * paid normally either way.
+   */
+  stealth?: boolean;
   now?: () => number;
 }
 
 export interface PaidResponse {
   response: Response;
   /** Set when this request was paid for. */
-  payment?: { amount: bigint; payTo: Address; from: Address };
+  payment?: { amount: bigint; payTo: Address; from: Address; stealth: boolean };
 }
 
 /**
@@ -293,8 +300,10 @@ export class Rx402Client {
     }
 
     const account = privateKeyToAccount(session.privateKey);
-    const signed = await signAuthorization(account, requirement, chainId, this.now());
-    const [name, value] = paymentHeader(required.version, requirement, signed);
+    const offer = this.config.stealth === false ? undefined : readStealthOffer(requirement.extra);
+    const stealth = offer ? stealthRecipient(offer) : undefined;
+    const signed = await signAuthorization(account, requirement, chainId, this.now(), stealth?.to);
+    const [name, value] = paymentHeader(required.version, requirement, signed, stealth?.proof);
     const headers = new Headers(init.headers);
     headers.set(name, value);
     const response = await fetch(input, { ...init, headers });
@@ -304,7 +313,10 @@ export class Rx402Client {
       s.spent = (BigInt(s.spent) + requirement.amount).toString();
       s.payments += 1;
       this.config.store.save(state);
-      return { response, payment: { amount: requirement.amount, payTo: requirement.payTo, from: account.address } };
+      return {
+        response,
+        payment: { amount: requirement.amount, payTo: signed.authorization.to, from: account.address, stealth: Boolean(stealth) },
+      };
     }
     return { response };
   }
