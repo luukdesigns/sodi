@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Contracts (${{ matrix.dir }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [contracts, a2a/contracts, erc8183/contracts, memory/contracts, stealth/contracts]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Build
+        working-directory: ${{ matrix.dir }}
+        run: forge build
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: forge test -vv
+
+  typescript:
+    name: TypeScript (typecheck and unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # rx402 imports the Privacy Pools circuit artifacts from the submodule.
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck --workspaces --if-present
+      - name: Unit tests
+        run: npm test --workspaces --if-present
+
+  chain-deploy:
+    name: L3 deploy scripts (typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chain/deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chain/deploy/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit

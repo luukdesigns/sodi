@@ -1,10 +1,12 @@
 # Sodi
 
+[![CI](https://github.com/rowanweiss/sodi/actions/workflows/ci.yml/badge.svg)](https://github.com/rowanweiss/sodi/actions/workflows/ci.yml)
+
 **Privacy-first infrastructure for agentic finance.**
 
 Sodi builds **rx402**: private x402 payments for AI agents. Agents pay for APIs, data and compute over x402 without exposing what they buy, how much they spend, or who owns them.
 
-> Status: early development. Nothing here is audited or ready for real funds.
+> Status: early development. Nothing here is audited or ready for real funds. An internal security review is written up in [`docs/security-review-2026-10.md`](./docs/security-review-2026-10.md).
 
 ## Why
 

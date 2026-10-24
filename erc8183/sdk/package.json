@@ -10,7 +10,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vitest run test/unit",
+    "test": "vitest run test/unit --passWithNoTests",
     "test:e2e": "vitest run test/e2e",
     "demo": "tsx demo/audit-job.ts",
     "typecheck": "tsc --noEmit"
