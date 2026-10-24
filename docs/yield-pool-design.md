@@ -153,14 +153,17 @@ Say what it is: a savings account that is also privacy infrastructure. Every dep
 
 ## Testnet
 
-Morpho isn't on Robinhood Chain testnet, so "deploy the new pool on testnet and move the demo agent to it" needs a stand-in for steakUSDG there. A plain ERC-4626 vault over testnet USDG would exercise every Sodi contract and the whole agent flow, everything except Morpho itself, which the mainnet fork tests cover. It earns nothing unless we add a simulated rate for the demo.
+Morpho isn't on Robinhood Chain testnet, so there the yield vault invests in a **stand-in**: a plain OpenZeppelin ERC-4626 over testnet USDG ([`TestnetStandInVault`](../contracts/src/yield/testnet/TestnetStandInVault.sol)), with the same interface SodiYieldVault uses in production and **no yield**. Its name says so. If we ever simulate a rate for the demo, it is labelled as simulated everywhere it appears, the demo page included. The point of testnet isn't the yield; it's everything around it, running with the demo agent for weeks before mainnet.
 
-Before the demo agent can use the yield pool, the rest of the stack needs:
+Deployed 2026-10-24 (addresses under `yieldPool` in [`deployments/46630.json`](../contracts/deployments/46630.json)): the stand-in, SodiYieldVault (seeded), the pool registered in the existing Entrypoint, the router and the funder, from [`DeployYieldPool.s.sol`](../contracts/script/DeployYieldPool.s.sol).
 
-- the relayer: an endpoint that submits `SessionFunder.fund`;
-- the SDK and issuer: sessions funded through the funder (`PoolWallet.withdrawVia` exists), with withdrawals sized in shares from a USDG budget;
-- deposits through the router in the SDK, the issuer's deposit command and the MCP tool;
-- the approval service and the demo agent pointed at the new pool.
+**Wiring, in order:**
+
+1. **Router deposits with screening.** *Done.* The SDK deposits and recycles through the router; the approval service screens the real depositor. Live ([`yield-testnet-live.ts`](../packages/rx402/demo/yield-testnet-live.ts)): the owner deposited through the router, two of the live agent's old-pool notes were withdrawn to fresh addresses and recycled in, and all three were screened against their real depositors and approved.
+2. **The funder endpoint on the relayer and share-sized sessions,** together, since they're one feature: the client, the issuer and the MCP server fund sessions through the funder, with a 1 basis point margin and exact USDG amounts.
+3. **The demo agent on the yield pool,** running for days before the website's proof section changes.
+
+Also planned: a keeper that invests waiting fees on a schedule or above a threshold, so they don't sit idle when deposits are quiet.
 
 ## Open questions
 

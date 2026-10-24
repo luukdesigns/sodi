@@ -1,4 +1,6 @@
-import { type Address, type Hex, type LocalAccount, type PublicClient, type WalletClient, encodeAbiParameters, parseEventLogs } from 'viem';
+import { type Address, type Hex, type LocalAccount, type PublicClient, type WalletClient, encodeAbiParameters, parseAbi, parseEventLogs } from 'viem';
+
+const routerAbi = parseAbi(['function deposit(uint256 assets, uint256 precommitment) returns (uint256 commitment)']);
 import { privateKeyToAccount } from 'viem/accounts';
 
 import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findRagequit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
@@ -28,7 +30,13 @@ export interface PoolWalletConfig {
   mnemonic: string;
   entrypoint: Address;
   pool: Address;
+  /** The pool's asset: USDG, or for the yield pool, the yield vault's share. */
   asset: Address;
+  /**
+   * Yield pool: deposits go through the router (SodiYieldDepositor) in `asset`, usually USDG, because
+   * the pool's own asset, the yield vault's share, only exists inside the pool.
+   */
+  router?: { address: Address; asset: Address };
   /** Block the pool was deployed at, where state-tree scanning starts. */
   poolDeploymentBlock: bigint;
   relayer: Relayer;
@@ -88,6 +96,11 @@ export class PoolWallet {
     return run;
   }
 
+  /** The token that goes in and comes out: USDG for both pools. */
+  private get fundsAsset(): Address {
+    return this.config.router?.asset ?? this.config.asset;
+  }
+
   get canDeposit(): boolean {
     return Boolean(this.config.ownerWallet?.account);
   }
@@ -99,7 +112,10 @@ export class PoolWallet {
 
   // ---------------------------------------------------------------- deposits
 
-  /** Deposits `amount` of the asset from the owner wallet. This step is public. */
+  /**
+   * Deposits `amount` from the owner wallet: of the pool's asset, or with a router, of USDG, which the
+   * router turns into yield-vault shares. This step is public.
+   */
   deposit(amount: bigint): Promise<PoolNote> {
     return this.exclusive(() => this.depositLocked(amount));
   }
@@ -115,32 +131,45 @@ export class PoolWallet {
     state.depositCounts[scope.toString()] = index + 1;
     store.save(state);
 
+    const router = this.config.router;
+    const token = router ? router.asset : asset;
+    const spender = router ? router.address : entrypoint;
     const allowance = await publicClient.readContract({
-      address: asset,
+      address: token,
       abi: erc20Abi,
       functionName: 'allowance',
-      args: [ownerWallet.account.address, entrypoint],
+      args: [ownerWallet.account.address, spender],
     });
     if (allowance < amount) {
       const approveTx = await ownerWallet.writeContract({
-        address: asset,
+        address: token,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [entrypoint, amount],
+        args: [spender, amount],
         account: ownerWallet.account,
         chain: ownerWallet.chain,
       });
       await publicClient.waitForTransactionReceipt({ hash: approveTx });
     }
 
-    const depositTx = await ownerWallet.writeContract({
-      address: entrypoint,
-      abi: entrypointAbi,
-      functionName: 'deposit',
-      args: [asset, amount, precommitmentHash(secrets)],
-      account: ownerWallet.account,
-      chain: ownerWallet.chain,
-    });
+    const depositTx = router
+      ? await ownerWallet.writeContract({
+          address: router.address,
+          abi: routerAbi,
+          functionName: 'deposit',
+          args: [amount, precommitmentHash(secrets)],
+          account: ownerWallet.account,
+          chain: ownerWallet.chain,
+          gas: ((await publicClient.estimateContractGas({ address: router.address, abi: routerAbi, functionName: 'deposit', args: [amount, precommitmentHash(secrets)], account: ownerWallet.account })) * 13n) / 10n,
+        })
+      : await ownerWallet.writeContract({
+          address: entrypoint,
+          abi: entrypointAbi,
+          functionName: 'deposit',
+          args: [asset, amount, precommitmentHash(secrets)],
+          account: ownerWallet.account,
+          chain: ownerWallet.chain,
+        });
     const receipt = await publicClient.waitForTransactionReceipt({ hash: depositTx });
     if (receipt.status !== 'success') throw new Error(`deposit reverted: ${depositTx}`);
 
@@ -200,7 +229,8 @@ export class PoolWallet {
    */
   recycle(account: LocalAccount, submitter: RecycleSubmitter, opts: { domain?: TokenDomain; value?: bigint } = {}): Promise<PoolNote> {
     return this.exclusive(async () => {
-      const { publicClient, asset, store, pool } = this.config;
+      const { publicClient, store, pool } = this.config;
+      const asset = this.fundsAsset;
       const value = opts.value ?? (await publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [account.address] }));
       if (value === 0n) throw new Error(`${account.address} holds nothing to recycle`);
       const scope = await this.getScope();
