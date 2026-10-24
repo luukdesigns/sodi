@@ -19,6 +19,8 @@ export interface RelayerSettings {
   relayFeeBPS: bigint;
   /** Smallest withdrawal worth relaying (asset base units), to avoid paying gas for dust. */
   minWithdrawal: bigint;
+  /** Smallest fee worth relaying for (asset base units), so the fee covers the relayer's gas. */
+  minFee?: bigint;
 }
 
 export interface RelayRequest {
@@ -102,47 +104,55 @@ export function checkTerms(req: RelayRequest, s: RelayerSettings): { recipient: 
 
   const withdrawn = req.proof.pubSignals[2];
   if (withdrawn < s.minWithdrawal) throw new RelayError(`withdrawal below minimum of ${s.minWithdrawal}`);
+  if (s.minFee !== undefined && (withdrawn * feeBPS) / 10_000n < s.minFee) {
+    throw new RelayError(`fee below the minimum of ${s.minFee}; withdraw more or pay a higher fee`);
+  }
   return { recipient, withdrawn };
 }
 
 /**
- * Sends relays one at a time, so concurrent requests never race on the relayer's nonce,
- * and simulates each one first so invalid proofs cost no gas.
+ * Simulates every request first, so invalid proofs cost no gas, then sends them one at a time so
+ * they never race on the relayer's nonce. Simulations run concurrently: junk requests can't hold up
+ * honest ones behind them.
  */
 export class RelaySubmitter {
-  private queue: Promise<unknown> = Promise.resolve();
+  private sending: Promise<unknown> = Promise.resolve();
+  private inFlight = 0;
 
   constructor(
     private readonly publicClient: PublicClient,
     private readonly wallet: WalletClient,
     private readonly settings: RelayerSettings,
+    private readonly maxInFlight = 32,
   ) {}
 
-  submit(req: RelayRequest): Promise<Hex> {
-    const run = this.queue.then(() => this.send(req));
-    this.queue = run.catch(() => {});
-    return run;
-  }
-
-  private async send(req: RelayRequest): Promise<Hex> {
-    const account = this.wallet.account!;
-    let request;
+  async submit(req: RelayRequest): Promise<Hex> {
+    if (this.inFlight >= this.maxInFlight) throw new RelayError('relayer is busy; try again shortly', 503);
+    this.inFlight++;
     try {
-      ({ request } = await this.publicClient.simulateContract({
-        address: this.settings.entrypoint,
-        abi: entrypointAbi,
-        functionName: 'relay',
-        args: [req.withdrawal, req.proof, req.scope],
-        account,
-      }));
-    } catch (err) {
-      const reason = err instanceof Error ? (err as { shortMessage?: string }).shortMessage ?? err.message : String(err);
-      throw new RelayError(`withdrawal would revert: ${reason}`, 422);
+      const account = this.wallet.account!;
+      let request;
+      try {
+        ({ request } = await this.publicClient.simulateContract({
+          address: this.settings.entrypoint,
+          abi: entrypointAbi,
+          functionName: 'relay',
+          args: [req.withdrawal, req.proof, req.scope],
+          account,
+        }));
+      } catch (err) {
+        const reason = err instanceof Error ? (err as { shortMessage?: string }).shortMessage ?? err.message : String(err);
+        throw new RelayError(`withdrawal would revert: ${reason}`, 422);
+      }
+      const send = this.sending.then(() => this.wallet.writeContract({ ...request, account, chain: this.wallet.chain }));
+      this.sending = send.catch(() => {});
+      const hash = await send;
+      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') throw new RelayError(`relay reverted: ${hash}`, 502);
+      return hash;
+    } finally {
+      this.inFlight--;
     }
-    const hash = await this.wallet.writeContract({ ...request, account, chain: this.wallet.chain });
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== 'success') throw new RelayError(`relay reverted: ${hash}`, 502);
-    return hash;
   }
 }
 

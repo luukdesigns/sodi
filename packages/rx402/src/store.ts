@@ -35,6 +35,8 @@ export interface Session {
 
 /** One x402 payment, kept for the owner's history. */
 export interface PaymentRecord {
+  /** The EIP-3009 authorization nonce; unique per payment. */
+  id?: Hex;
   at: number;
   /** Origin and path paid for (no query string). */
   resource: string;
@@ -43,6 +45,8 @@ export interface PaymentRecord {
   payTo: Address;
   stealth: boolean;
   session: Address;
+  /** pending: signed and sent; accepted: merchant answered 2xx; refused: it didn't (may still settle). */
+  status?: 'pending' | 'accepted' | 'refused';
 }
 
 export interface WalletState {

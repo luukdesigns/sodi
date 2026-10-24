@@ -58,7 +58,7 @@ const RELAY_FEE_BPS = 50n;
 // Approval service
 const aspDir = join(tmpdir(), `sodi-live-asp-${Date.now()}`);
 const aspState: ServiceState = { chainId: 46630, entrypoint: ENTRYPOINT.toLowerCase(), lastScannedBlock: deployment.deploymentBlock - 1, deposits: [], published: [] };
-const asp = startAsp(18502, () => aspState, join(aspDir, 'sets'));
+const asp = startAsp(18502, () => aspState, join(aspDir, 'sets'), '127.0.0.1');
 const approve = () =>
   runCycle({
     publicClient,
@@ -81,7 +81,7 @@ const settings = {
   relayFeeBPS: RELAY_FEE_BPS,
   minWithdrawal: 10_000n,
 };
-const relayer = startRelayer(18503, 46630, settings, new RelaySubmitter(publicClient, relayerWallet, settings), (m) => console.log(`   [relayer] ${m}`));
+const relayer = startRelayer(18503, 46630, settings, new RelaySubmitter(publicClient, relayerWallet, settings), (m) => console.log(`   [relayer] ${m}`), { host: '127.0.0.1' });
 
 // Merchants: an ordinary x402 API, and one that offers stealth
 const plain = startMerchant({ port: 18504, asset: USDG, payTo: MERCHANT, facilitator, publicClient, prices: { '/quote': { amount: PRICE, version: 1 } } });

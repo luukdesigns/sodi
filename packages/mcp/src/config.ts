@@ -51,7 +51,12 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
     pool: deployment.pools.USDG.pool as Address,
     asset: deployment.pools.USDG.asset as Address,
     poolDeploymentBlock: BigInt(deployment.deploymentBlock),
-    relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403')),
+    relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403'), {
+      chainId: deployment.chainId as number,
+      entrypoint: deployment.contracts.Entrypoint as Address,
+      feeRecipient: process.env.RELAYER_FEE_RECIPIENT as Address | undefined,
+      maxFeeBPS: BigInt(env('RELAYER_MAX_FEE_BPS', '100')),
+    }),
     prover: new WithdrawalProver(),
     associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
     stealth: env('RX402_STEALTH', 'true') !== 'false',

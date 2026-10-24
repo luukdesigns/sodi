@@ -18,6 +18,7 @@ async function main() {
   const deployment = JSON.parse(readFileSync(deploymentFile, 'utf8'));
   const relayFeeBPS = BigInt(process.env.RELAY_FEE_BPS ?? '0');
   const minWithdrawal = BigInt(process.env.MIN_WITHDRAWAL ?? '100000'); // 0.1 USDG
+  const minFee = BigInt(process.env.MIN_FEE ?? '0'); // set so the fee covers gas on mainnet
   const port = Number(process.env.PORT ?? 8403);
 
   const chain = defineChain({
@@ -38,9 +39,13 @@ async function main() {
     feeRecipient: (process.env.FEE_RECIPIENT as Address | undefined) ?? account.address,
     relayFeeBPS,
     minWithdrawal,
+    minFee,
   };
 
-  startServer(port, deployment.chainId, settings, new RelaySubmitter(publicClient, wallet, settings), log);
+  startServer(port, deployment.chainId, settings, new RelaySubmitter(publicClient, wallet, settings), log, {
+    host: process.env.HOST,
+    requestsPerMinute: Number(process.env.RATE_LIMIT_PER_MINUTE ?? '30'),
+  });
   const gas = await publicClient.getBalance({ address: account.address });
   log(`relayer ${account.address} on chain ${deployment.chainId}, fee ${relayFeeBPS} bps, gas balance ${gas} wei, listening on :${port}`);
 }

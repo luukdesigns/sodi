@@ -87,6 +87,9 @@ export function selectRequirement(
   return match;
 }
 
+/** Longest an authorization stays valid, whatever the merchant asks for. */
+export const MAX_VALIDITY_SECONDS = 300;
+
 export interface Authorization {
   from: Address;
   to: Address;
@@ -112,7 +115,8 @@ export async function signAuthorization(
     to,
     value: requirement.amount,
     validAfter: 0n,
-    validBefore: BigInt(nowSeconds + requirement.maxTimeoutSeconds),
+    // The merchant picks the timeout; never sign anything that stays valid for more than 5 minutes.
+    validBefore: BigInt(nowSeconds + Math.min(Math.max(requirement.maxTimeoutSeconds, 10), MAX_VALIDITY_SECONDS)),
     nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
   };
   const signature = await account.signTypedData({

@@ -13,7 +13,7 @@ import type { ServiceState } from './state.js';
  *   GET /association-set/:cid   a specific published set
  *   GET /deposits/:label        screening status of one deposit
  */
-export function startServer(port: number, getState: () => ServiceState, setsDir: string): Server {
+export function startServer(port: number, getState: () => ServiceState, setsDir: string, host?: string): Server {
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
@@ -54,6 +54,6 @@ export function startServer(port: number, getState: () => ServiceState, setsDir:
 
     return send(404, { error: 'not found' });
   });
-  server.listen(port);
+  server.listen(port, host);
   return server;
 }

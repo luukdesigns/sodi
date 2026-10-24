@@ -15,13 +15,26 @@ export function startServer(
   settings: RelayerSettings,
   submitter: RelaySubmitter,
   log: (m: string) => void = () => {},
+  opts: { host?: string; requestsPerMinute?: number } = {},
 ): Server {
+  // Per-IP rate limit on /relay: each request costs the relayer a simulation.
+  const perMinute = opts.requestsPerMinute ?? 30;
+  const hits = new Map<string, number[]>();
+  const limited = (ip: string) => {
+    const now = Date.now();
+    const recent = (hits.get(ip) ?? []).filter((t) => now - t < 60_000);
+    recent.push(now);
+    hits.set(ip, recent);
+    if (hits.size > 10_000) hits.clear();
+    return recent.length > perMinute;
+  };
   const quote = {
     chainId,
     entrypoint: settings.entrypoint,
     feeRecipient: settings.feeRecipient,
     relayFeeBPS: settings.relayFeeBPS.toString(),
     minWithdrawal: settings.minWithdrawal.toString(),
+    minFee: (settings.minFee ?? 0n).toString(),
   };
 
   const server = createServer((req, res) => {
@@ -34,6 +47,7 @@ export function startServer(
     if (req.method === 'GET' && path === '/health') return send(200, { ok: true, chainId });
     if (req.method === 'GET' && path === '/quote') return send(200, quote);
     if (req.method !== 'POST' || path !== '/relay') return send(404, { error: 'not found' });
+    if (limited(req.socket.remoteAddress ?? 'unknown')) return send(429, { error: 'too many requests' });
 
     let raw = '';
     let tooBig = false;
@@ -60,6 +74,6 @@ export function startServer(
       }
     });
   });
-  server.listen(port);
+  server.listen(port, opts.host);
   return server;
 }

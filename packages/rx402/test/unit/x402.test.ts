@@ -117,3 +117,14 @@ describe('signing', () => {
     expect(decode(h2).accepted).toEqual(v2Body.accepts[0]);
   });
 });
+
+describe('authorization lifetime', () => {
+  it('never signs anything valid for more than five minutes, whatever the merchant asks', async () => {
+    const account = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+    const base = { scheme: 'exact', network: 'eip155:46630', asset: USDG, payTo: MERCHANT, amount: 1n, raw: {} };
+    const long = await signAuthorization(account, { ...base, maxTimeoutSeconds: 86_400 }, 46630, 1_000);
+    const short = await signAuthorization(account, { ...base, maxTimeoutSeconds: 60 }, 46630, 1_000);
+    expect(long.authorization.validBefore).toBe(1_300n);
+    expect(short.authorization.validBefore).toBe(1_060n);
+  });
+});

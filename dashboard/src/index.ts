@@ -32,6 +32,24 @@ const aspUrl = process.env.ASP_URL;
 const controls = new FileControls(env('RX402_CONTROLS', join(homedir(), '.sodi', 'controls.json')));
 const port = Number(env('DASHBOARD_PORT', '8480'));
 
+/**
+ * Each lookup tells the RPC provider (or approval service) about addresses that are yours, all from
+ * one IP. Cache them for a while so the dashboard doesn't announce your whole set of sessions every
+ * few seconds; point RPC_URL at a node you run for full privacy.
+ */
+const CACHE_SECONDS = Number(env('DASHBOARD_CACHE_SECONDS', '300'));
+function cached<K, V>(fn: (k: K) => Promise<V>): (k: K) => Promise<V> {
+  const memo = new Map<K, { at: number; value: Promise<V> }>();
+  return (k) => {
+    const hit = memo.get(k);
+    if (hit && Date.now() / 1000 - hit.at < CACHE_SECONDS) return hit.value;
+    const value = fn(k);
+    memo.set(k, { at: Date.now() / 1000, value });
+    value.catch(() => memo.delete(k));
+    return value;
+  };
+}
+
 const { ownerToken, viewerToken } = startDashboard({
   port,
   sources: {
@@ -40,12 +58,12 @@ const { ownerToken, viewerToken } = startDashboard({
     chainId,
     asset,
     explorer: chainId === 4663 ? 'https://explorer.chain.robinhood.com' : chainId === 46630 ? 'https://explorer.testnet.chain.robinhood.com' : undefined,
-    balanceOf: (address) => publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [address] }),
+    balanceOf: cached((address: Address) => publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [address] })),
     approvalOf: aspUrl
-      ? async (label) => {
+      ? cached(async (label: string) => {
           const r = await fetch(`${aspUrl}/deposits/${label}`);
           return r.ok ? ((await r.json()) as { status: string }).status : undefined;
-        }
+        })
       : undefined,
   },
   saveControls: (c) => controls.save(c),

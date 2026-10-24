@@ -188,7 +188,7 @@
       <td title="${new Date(p.at * 1000).toLocaleString()}">${ago(p.at)}</td>
       <td>${esc(p.resource.replace(/^https?:\/\//, ''))}</td>
       <td>${usd(p.amount)} USDG</td>
-      <td>${link('address', p.payTo, short(p.payTo))} ${p.stealth ? '<span class="badge stealth">one-time stealth</span>' : ''}</td>
+      <td>${link('address', p.payTo, short(p.payTo))} ${p.stealth ? '<span class="badge stealth">one-time stealth</span>' : ''}${p.status === 'refused' ? ' <span class="badge" title="The merchant answered with an error after receiving the signed payment. It may still settle it.">merchant refused</span>' : ''}</td>
       <td>${link('address', p.session, short(p.session))}</td></tr>`).join('') : empty(5, 'No payments yet.');
 
     $('sessions').innerHTML = state.sessions.length ? state.sessions.map((s) => `<tr>

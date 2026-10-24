@@ -1,4 +1,4 @@
-import { type Address, type Hex, type PublicClient, parseAbi, parseAbiItem } from 'viem';
+import { type Address, type Hex, type PublicClient, parseAbi, parseAbiItem, parseEventLogs } from 'viem';
 
 export const entrypointAbi = parseAbi([
   'function deposit(address _asset, uint256 _value, uint256 _precommitment) returns (uint256)',
@@ -74,3 +74,69 @@ export async function latestAspRoot(client: PublicClient, entrypoint: Address): 
 }
 
 export type { Hex };
+
+const withdrawalRelayedEvent = parseAbiItem(
+  'event WithdrawalRelayed(address indexed _relayer, address indexed _recipient, address indexed _asset, uint256 _amount, uint256 _feeAmount)',
+);
+
+export interface FoundWithdrawal {
+  value: bigint;
+  newCommitment: bigint;
+  txHash: Hex;
+  /** The session address funded, and what it received after the relay fee (if relayed). */
+  recipient?: Address;
+  received?: bigint;
+}
+
+/** Finds the withdrawal that spent `spentNullifierHash`, scanning from `fromBlock`. */
+export async function findWithdrawal(
+  client: PublicClient,
+  pool: Address,
+  entrypoint: Address,
+  fromBlock: bigint,
+  spentNullifierHash: bigint,
+  chunkSize = 10_000n,
+): Promise<FoundWithdrawal | undefined> {
+  const head = await client.getBlockNumber({ cacheTime: 0 });
+  // Newest first: the spend we are looking for is almost always recent.
+  for (let end = head; end >= fromBlock; end -= chunkSize) {
+    const start = end - chunkSize + 1n > fromBlock ? end - chunkSize + 1n : fromBlock;
+    const logs = await client.getLogs({ address: pool, event: withdrawnEvent, fromBlock: start, toBlock: end });
+    const hit = logs.find((l) => l.args._spentNullifier === spentNullifierHash);
+    if (!hit) {
+      if (start === fromBlock) break;
+      continue;
+    }
+    const receipt = await client.getTransactionReceipt({ hash: hit.transactionHash });
+    const relayed = parseEventLogs({ abi: [withdrawalRelayedEvent], logs: receipt.logs }).find(
+      (l) => l.address.toLowerCase() === entrypoint.toLowerCase(),
+    );
+    return {
+      value: hit.args._value!,
+      newCommitment: hit.args._newCommitment!,
+      txHash: hit.transactionHash,
+      recipient: relayed?.args._recipient,
+      received: relayed ? relayed.args._amount! - relayed.args._feeAmount! : undefined,
+    };
+  }
+  return undefined;
+}
+
+/** Finds the deposit with `precommitment`, for recovering a deposit whose note was never saved. */
+export async function findDeposit(
+  client: PublicClient,
+  pool: Address,
+  fromBlock: bigint,
+  precommitment: bigint,
+  chunkSize = 10_000n,
+): Promise<{ label: bigint; value: bigint; commitment: bigint; txHash: Hex } | undefined> {
+  const head = await client.getBlockNumber({ cacheTime: 0 });
+  for (let end = head; end >= fromBlock; end -= chunkSize) {
+    const start = end - chunkSize + 1n > fromBlock ? end - chunkSize + 1n : fromBlock;
+    const logs = await client.getLogs({ address: pool, event: depositedEvent, fromBlock: start, toBlock: end });
+    const hit = logs.find((l) => l.args._precommitmentHash === precommitment);
+    if (hit) return { label: hit.args._label!, value: hit.args._value!, commitment: hit.args._commitment!, txHash: hit.transactionHash };
+    if (start === fromBlock) break;
+  }
+  return undefined;
+}

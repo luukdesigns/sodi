@@ -31,6 +31,7 @@ const fail = (message: string) => ({ content: [{ type: 'text' as const, text: me
 export function createSodiMcpServer(client: Rx402Client, options: McpOptions): McpServer {
   const server = new McpServer({ name: 'sodi', version: '0.1.0' });
   let totalSpent = 0n;
+  let paidCalls: Promise<unknown> = Promise.resolve();
 
   server.registerTool(
     'rx402_status',
@@ -89,42 +90,53 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async ({ url, method, headers, body, max_price_usdg }) => {
-      const target = new URL(url);
-      if (target.protocol !== 'https:' && target.protocol !== 'http:') return fail('only http and https URLs are supported');
-      if (options.allowedHosts.length > 0 && !options.allowedHosts.includes(target.hostname)) {
-        return fail(`host ${target.hostname} is not in the allowed list`);
-      }
-
-      const remainingAllowance = options.maxTotalSpend - totalSpent;
-      let cap = remainingAllowance;
-      if (max_price_usdg !== undefined) {
-        const requested = toUnits(max_price_usdg);
-        if (requested < cap) cap = requested;
-      }
-      if (cap <= 0n) return fail('spending limit for this run has been reached');
-
-      try {
-        const { response, payment } = await client.fetch(
-          target,
-          { method, headers, body: method === 'GET' ? undefined : body },
-          { maxPaymentAmount: cap },
-        );
-        if (payment) totalSpent += payment.amount;
-        const text = await response.text();
-        return json({
-          status: response.status,
-          contentType: response.headers.get('content-type'),
-          body: text.length > MAX_BODY_CHARS ? `${text.slice(0, MAX_BODY_CHARS)}… [truncated]` : text,
-          payment: payment
-            ? { paidUsdg: usd(payment.amount), payTo: payment.payTo, fromSession: payment.from, stealth: payment.stealth }
-            : null,
-        });
-      } catch (err) {
-        return fail(err instanceof Error ? err.message : String(err));
-      }
+    (args) => {
+      // One paid fetch at a time, so the run limit is checked against everything already spent.
+      const run = paidCalls.then(() => paidFetch(args));
+      paidCalls = run.catch(() => {});
+      return run;
     },
   );
+
+  async function paidFetch({ url, method, headers, body, max_price_usdg }: { url: string; method: string; headers?: Record<string, string>; body?: string; max_price_usdg?: string }) {
+    const target = new URL(url);
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') return fail('only http and https URLs are supported');
+    if (options.allowedHosts.length > 0 && !options.allowedHosts.includes(target.hostname)) {
+      return fail(`host ${target.hostname} is not in the allowed list`);
+    }
+
+    const remainingAllowance = options.maxTotalSpend - totalSpent;
+    let cap = remainingAllowance;
+    if (max_price_usdg !== undefined) {
+      const requested = toUnits(max_price_usdg);
+      if (requested < cap) cap = requested;
+    }
+    if (cap <= 0n) return fail('spending limit for this run has been reached');
+
+    try {
+      const { response, payment } = await client.fetch(
+        target,
+        { method, headers, body: method === 'GET' ? undefined : body },
+        // The allow-list is re-checked against the host that finally asks for payment, after redirects.
+        { maxPaymentAmount: cap, allowedHosts: options.allowedHosts },
+      );
+      // Counted even if the merchant then answered with an error: the signed payment can still be settled.
+      if (payment) totalSpent += payment.amount;
+      const text = await response.text();
+      return json({
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        body: text.length > MAX_BODY_CHARS ? `${text.slice(0, MAX_BODY_CHARS)}… [truncated]` : text,
+        payment: payment
+          ? { paidUsdg: usd(payment.amount), payTo: payment.payTo, fromSession: payment.from, stealth: payment.stealth, merchantAccepted: payment.accepted }
+          : null,
+      });
+    } catch (err) {
+      const signed = (err as { payment?: { amount: bigint } }).payment;
+      if (signed) totalSpent += signed.amount;
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   server.registerTool(
     'rx402_open_session',
@@ -139,6 +151,7 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
     async ({ budget_usdg }) => {
       try {
         const budget = budget_usdg ? toUnits(budget_usdg) : client.policy.budget;
+        if (budget > client.policy.budget) return fail(`budget can't exceed the configured session budget (${usd(client.policy.budget)} USDG)`);
         const s = await client.openSession(budget);
         return json({ address: s.address, budgetUsdg: usd(BigInt(s.budget)), fundingTx: s.fundingTx });
       } catch (err) {

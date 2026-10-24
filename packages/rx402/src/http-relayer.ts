@@ -24,11 +24,25 @@ export class HttpRelayer implements Relayer {
     readonly quote: RelayQuote,
   ) {}
 
-  static async connect(baseUrl: string): Promise<HttpRelayer> {
+  /**
+   * The fee recipient and fee are written into every withdrawal, which is public. A relayer that gave
+   * each client its own recipient or an unusual fee could tag all of that client's sessions, so pin
+   * the terms you expect (`feeRecipient`, `maxFeeBPS`) when you know them.
+   */
+  static async connect(
+    baseUrl: string,
+    expect: { chainId?: number; entrypoint?: Address; feeRecipient?: Address; maxFeeBPS?: bigint } = {},
+  ): Promise<HttpRelayer> {
     const res = await fetch(new URL('/quote', baseUrl));
     if (!res.ok) throw new Error(`relayer quote failed: ${res.status}`);
     const quote = (await res.json()) as RelayQuote;
-    return new HttpRelayer(baseUrl, quote.feeRecipient, BigInt(quote.relayFeeBPS), quote);
+    const same = (a?: string, b?: string) => !a || !b || a.toLowerCase() === b.toLowerCase();
+    if (expect.chainId !== undefined && quote.chainId !== expect.chainId) throw new Error(`relayer is for chain ${quote.chainId}, expected ${expect.chainId}`);
+    if (!same(expect.entrypoint, quote.entrypoint)) throw new Error('relayer serves a different entrypoint');
+    if (!same(expect.feeRecipient, quote.feeRecipient)) throw new Error(`relayer fee recipient ${quote.feeRecipient} is not the expected ${expect.feeRecipient}`);
+    const fee = BigInt(quote.relayFeeBPS);
+    if (expect.maxFeeBPS !== undefined && fee > expect.maxFeeBPS) throw new Error(`relayer fee ${fee} bps is above the expected ${expect.maxFeeBPS}`);
+    return new HttpRelayer(baseUrl, quote.feeRecipient, fee, quote);
   }
 
   async relay(withdrawal: Withdrawal, proof: SolidityProof, scope: bigint): Promise<Hex> {

@@ -8,6 +8,12 @@ import { type DepositRecord, type ScreeningPolicy, approvedLabels, screen } from
 import { saveState, type ServiceState } from './state.js';
 import { associationSetDocument, documentCid, encodeDocument } from './tree.js';
 
+/**
+ * Stands in for "no approved deposits". Labels are keccak256 outputs reduced into the SNARK field,
+ * so a real deposit labelled 1 is not a practical possibility.
+ */
+export const SENTINEL_LABEL = 1n;
+
 export interface ServiceContext {
   publicClient: PublicClient;
   walletClient?: WalletClient;
@@ -19,6 +25,11 @@ export interface ServiceContext {
   setsDir: string;
   logChunkSize: number;
   dryRun: boolean;
+  /**
+   * Re-scan this many blocks behind the last scan every cycle, so a deposit that a reorg moved into
+   * an already-scanned range is still found. Default 64.
+   */
+  rescanBlocks?: number;
   now?: () => number;
   log?: (msg: string) => void;
 }
@@ -47,7 +58,7 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
 
   // 1. Scan new deposits.
   const head = await publicClient.getBlockNumber({ cacheTime: 0 });
-  const from = BigInt(state.lastScannedBlock + 1);
+  const from = BigInt(Math.max(0, state.lastScannedBlock + 1 - (ctx.rescanBlocks ?? 64)));
   let newDeposits = 0;
   if (from <= head) {
     const found = await fetchDeposits(publicClient, ctx.pools, from, head, ctx.logChunkSize);
@@ -75,13 +86,19 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
 
   // 3. Build the set and compare with on-chain.
   const labels = approvedLabels(state.deposits);
-  const doc = associationSetDocument(state.chainId, ctx.entrypoint, labels);
-  const root = BigInt(doc.root);
   const onChainRoot = await latestRoot(publicClient, ctx.entrypoint);
   const counts = countStatuses(state.deposits);
+  // An empty set can't be published (the Entrypoint rejects a zero root). If deposits were approved
+  // before and all have since been denied, publish a set holding only a sentinel label that no real
+  // deposit can have, so the old root, which still approves them, is replaced.
+  if (labels.length === 0) {
+    if (onChainRoot === 0n || onChainRoot === SENTINEL_LABEL) return { newDeposits, ...counts, root: 0n, onChainRoot };
+    labels.push(SENTINEL_LABEL);
+    log('no deposits are approved any more; replacing the on-chain root with an empty (sentinel) set');
+  }
+  const doc = associationSetDocument(state.chainId, ctx.entrypoint, labels);
+  const root = BigInt(doc.root);
   const result: CycleResult = { newDeposits, ...counts, root, onChainRoot };
-
-  if (labels.length === 0) return result;
 
   // 4. Write the set, so clients can fetch it, then publish its root if the chain doesn't have it yet.
   const cid = await documentCid(doc);

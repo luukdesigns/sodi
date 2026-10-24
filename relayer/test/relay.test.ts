@@ -1,7 +1,8 @@
 import { encodeAbiParameters } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import { type RelayerSettings, checkTerms, parseRelayRequest } from '../src/relay.js';
+import { RelaySubmitter, type RelayerSettings, checkTerms, parseRelayRequest } from '../src/relay.js';
+import { startServer } from '../src/server.js';
 
 const ENTRYPOINT = '0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce';
 const RELAYER = '0x90F79bf6EB2c4f870365E785982E1f101E93b906';
@@ -61,5 +62,61 @@ describe('relay request checks', () => {
     expect(() => parseRelayRequest(b)).toThrow(/pubSignals/);
     expect(() => parseRelayRequest({ ...body(), proof: { ...body().proof, pA: ['x', 'y'] } })).toThrow(/pA/);
     expect(() => parseRelayRequest({ withdrawal: { processooor: 'nope', data: '0x' } })).toThrow(/withdrawal/);
+  });
+});
+
+describe('abuse resistance', () => {
+  it('refuses a fee too small to cover gas', () => {
+    const s = { ...settings, minFee: 1_000n };
+    expect(() => checkTerms(parseRelayRequest(body({ withdrawn: '100000' })), s)).toThrow(/fee below the minimum/);
+    expect(() => checkTerms(parseRelayRequest(body({ withdrawn: '200000' })), s)).not.toThrow();
+  });
+
+  /** A chain where junk requests take a long time to simulate and honest ones are quick. */
+  const slowJunk = () => {
+    const sent: string[] = [];
+    const publicClient = {
+      simulateContract: async ({ args }: { args: [{ data: string }] }) => {
+        if (args[0].data === 'junk') {
+          await new Promise((r) => setTimeout(r, 200));
+          throw Object.assign(new Error('reverted'), { shortMessage: 'InvalidProof' });
+        }
+        return { request: { tag: args[0].data } };
+      },
+      waitForTransactionReceipt: async () => ({ status: 'success' }),
+    };
+    const wallet = { account: { address: RELAYER }, chain: undefined, writeContract: async (r: { tag: string }) => (sent.push(r.tag), '0x01') };
+    return { publicClient, wallet, sent };
+  };
+  const req = (data: string) => ({ withdrawal: { processooor: ENTRYPOINT, data }, proof: {}, scope: SCOPE }) as never;
+
+  it("doesn't make honest requests wait behind junk ones", async () => {
+    const { publicClient, wallet } = slowJunk();
+    const sub = new RelaySubmitter(publicClient as never, wallet as never, settings);
+    const junk = Array.from({ length: 20 }, () => sub.submit(req('junk')).catch(() => {}));
+    const t = Date.now();
+    await sub.submit(req('honest'));
+    expect(Date.now() - t).toBeLessThan(150);
+    await Promise.all(junk);
+  });
+
+  it('caps the requests it works on at once', async () => {
+    const { publicClient, wallet } = slowJunk();
+    const sub = new RelaySubmitter(publicClient as never, wallet as never, settings, 3);
+    const results = await Promise.allSettled(Array.from({ length: 5 }, () => sub.submit(req('junk'))));
+    const busy = results.filter((r) => r.status === 'rejected' && /busy/.test(String((r as PromiseRejectedResult).reason)));
+    expect(busy).toHaveLength(2);
+  });
+
+  it('rate-limits each client', async () => {
+    const { publicClient, wallet } = slowJunk();
+    const server = startServer(18641, 46630, settings, new RelaySubmitter(publicClient as never, wallet as never, settings), () => {}, { host: '127.0.0.1', requestsPerMinute: 3 });
+    const codes = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await fetch('http://127.0.0.1:18641/relay', { method: 'POST', body: '{}' });
+      codes.push(r.status);
+    }
+    server.close();
+    expect(codes).toEqual([400, 400, 400, 429, 429]);
   });
 });

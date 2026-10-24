@@ -68,7 +68,7 @@ const approve = () =>
     logChunkSize: 25_000,
     dryRun: false,
   });
-startAsp(18702, () => aspState, join(aspDir, 'sets'));
+startAsp(18702, () => aspState, join(aspDir, 'sets'), '127.0.0.1');
 
 // Relayer
 const relayerWallet = wallet(need('RELAYER_PRIVATE_KEY'));
@@ -79,7 +79,7 @@ const settings = {
   relayFeeBPS: 50n,
   minWithdrawal: 5_000n,
 };
-startRelayer(18703, chainId, settings, new RelaySubmitter(publicClient, relayerWallet, settings), (m) => log(`relayer: ${m}`));
+startRelayer(18703, chainId, settings, new RelaySubmitter(publicClient, relayerWallet, settings), (m) => log(`relayer: ${m}`), { host: '127.0.0.1' });
 
 // The APIs
 const merchant = wallet(need('MERCHANT_PRIVATE_KEY'));
@@ -104,7 +104,7 @@ const client = new Rx402Client({
   pool: POOL,
   asset: USDG,
   poolDeploymentBlock: BigInt(deployment.deploymentBlock),
-  relayer: await HttpRelayer.connect('http://127.0.0.1:18703'),
+  relayer: await HttpRelayer.connect('http://127.0.0.1:18703', { chainId, entrypoint: ENTRYPOINT, feeRecipient: relayerWallet.account.address, maxFeeBPS: 50n }),
   prover: new WithdrawalProver(),
   associationSet: aspAssociationSet('http://127.0.0.1:18702'),
   store: new FileStore(need('RX402_STORE')),

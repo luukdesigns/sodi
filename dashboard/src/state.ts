@@ -45,7 +45,7 @@ export interface DashboardState {
     stealthPayments: number;
     heldInSessions: string;
   };
-  payments: { at: number; resource: string; amount: string; payTo: Address; stealth: boolean; session: Address }[];
+  payments: { at: number; resource: string; amount: string; payTo: Address; stealth: boolean; session: Address; status?: string }[];
 }
 
 const MAX_PAYMENTS_SHOWN = 500;

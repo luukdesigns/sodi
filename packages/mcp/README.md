@@ -52,6 +52,8 @@ For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/
 | `DEPLOYMENT_FILE` | `contracts/deployments/46630.json` | |
 | `RX402_STORE` | `~/.sodi/rx402.json` | Notes and session keys; keep private |
 | `RX402_SESSION_BUDGET` | `1` | USDG per session |
+| `RELAYER_FEE_RECIPIENT` | unset | Pin the relayer's fee address; the client refuses a relayer that quotes another (a relayer could otherwise tag your sessions) |
+| `RELAYER_MAX_FEE_BPS` | `100` | Refuse relayers that charge more |
 | `RX402_CONTROLS` | `~/.sodi/controls.json` | Owner controls (kill switch, caps, allowed hosts), re-read before every payment; set from the [dashboard](../../dashboard) |
 | `RX402_STEALTH` | `true` | Pay merchants that offer a stealth address at a one-time address; `false` always pays `payTo` |
 | `RX402_MAX_PAYMENTS_PER_SESSION` | `20` | |

@@ -109,3 +109,24 @@ export function randomFieldElement(): bigint {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return bytesToBigInt(bytes) % SNARK_SCALAR_FIELD;
 }
+
+const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+/**
+ * Private key of the session funded by the n-th withdrawal from a deposit. Derived from the
+ * mnemonic, so a session is never lost even if the agent crashes between the withdrawal landing
+ * and the session being saved. Distinct from the pool secrets: knowing a session key reveals
+ * nothing about the deposit or other sessions.
+ */
+export function sessionPrivateKey(keys: MasterKeys, label: bigint, index: bigint): Hex {
+  const h = BigInt(
+    keccak256(
+      encodeAbiParameters(
+        [{ type: 'string' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }],
+        ['sodi-rx402-session-v1', keys.masterSecret, label, index],
+      ),
+    ),
+  );
+  const k = (h % (SECP256K1_N - 1n)) + 1n;
+  return `0x${k.toString(16).padStart(64, '0')}`;
+}
