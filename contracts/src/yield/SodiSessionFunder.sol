@@ -2,12 +2,13 @@
 pragma solidity 0.8.28;
 
 import {IERC20} from '@oz/token/ERC20/IERC20.sol';
-import {IERC4626} from '@oz/interfaces/IERC4626.sol';
 import {SafeERC20} from '@oz/token/ERC20/utils/SafeERC20.sol';
 import {ReentrancyGuard} from '@oz/utils/ReentrancyGuard.sol';
 
 import {ProofLib} from 'contracts/lib/ProofLib.sol';
 import {IPrivacyPool} from 'interfaces/IPrivacyPool.sol';
+
+import {SodiYieldVault} from './SodiYieldVault.sol';
 
 /// @title SodiSessionFunder (prototype)
 /// @notice Turns a zero-knowledge withdrawal of yield-vault shares into a USDG session, in one
@@ -16,7 +17,8 @@ import {IPrivacyPool} from 'interfaces/IPrivacyPool.sol';
 ///         It is the withdrawal's processooor: the proof commits to this contract and to the funding data
 ///         (session, relayer fee recipient, relayer fee, minimum USDG), so whoever submits it, usually a
 ///         relayer, can't change any of them. The pool checks the proof and the latest approval root and
-///         sends the shares here; this contract redeems them, donates the protocol fee to the yield vault,
+///         sends the shares here; this contract redeems them, donates the protocol fee to the yield vault
+///         (where it streams into the share price over seven days),
 ///         pays the relayer and sends the rest to the session as plain USDG.
 ///
 ///         PROTOTYPE: not audited, not deployed. See docs/yield-pool-design.md.
@@ -31,7 +33,7 @@ contract SodiSessionFunder is ReentrancyGuard {
   }
 
   IPrivacyPool public immutable pool;
-  IERC4626 public immutable vault;
+  SodiYieldVault public immutable vault;
   IERC20 public immutable usdg;
   /// @notice Share of each session's USDG donated to the yield vault, in basis points.
   uint256 public immutable protocolFeeBPS;
@@ -43,7 +45,7 @@ contract SodiSessionFunder is ReentrancyGuard {
   error RelayFeeTooHigh();
   error BelowMinimum(uint256 toSession, uint256 minAssets);
 
-  constructor(IPrivacyPool pool_, IERC4626 vault_, uint256 protocolFeeBPS_) {
+  constructor(IPrivacyPool pool_, SodiYieldVault vault_, uint256 protocolFeeBPS_) {
     pool = pool_;
     vault = vault_;
     usdg = IERC20(vault_.asset());
@@ -65,7 +67,10 @@ contract SodiSessionFunder is ReentrancyGuard {
     uint256 toSession = assets - protocolFee - relayFee;
     if (toSession < d.minAssets) revert BelowMinimum(toSession, d.minAssets);
 
-    if (protocolFee > 0) usdg.safeTransfer(address(vault), protocolFee);
+    if (protocolFee > 0) {
+      usdg.forceApprove(address(vault), protocolFee);
+      vault.donate(protocolFee);
+    }
     if (relayFee > 0) usdg.safeTransfer(d.feeRecipient, relayFee);
     usdg.safeTransfer(d.session, toSession);
     emit SessionFunded(d.session, shares, assets, protocolFee, relayFee);

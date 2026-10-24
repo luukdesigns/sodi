@@ -2,10 +2,11 @@
  * Yield pool prototype, end to end with real zero-knowledge proofs, on a local fork of Robinhood Chain
  * mainnet with the real USDG and the real Steakhouse USDG Morpho vault (see docs/yield-pool-design.md).
  *
- * The audited pool is deployed unchanged over SodiYieldVault shares. An owner deposits, the approval
- * service approves, interest accrues for 30 days, then two sessions are funded through
- * SodiSessionFunder from real Groth16 proofs: USDG lands at a fresh address, the relayer is paid, and
- * the protocol fee raises the share price for everyone still in the pool.
+ * The audited pool is deployed unchanged over SodiYieldVault shares, which only exist inside it. An
+ * owner deposits through the router, the approval service approves, interest accrues for 30 days, then
+ * two sessions are funded through SodiSessionFunder from real Groth16 proofs: USDG lands at a fresh
+ * address, the relayer is paid, and the protocol fee streams into the share price. Finally what's left
+ * in a session is recycled into the yield pool with the unchanged rx402 recycle code.
  *
  * Run with test/e2e-mainnet/run-fork.sh.
  */
@@ -32,7 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer as startAsp } from '../../../../asp/src/server.js';
 import { runCycle } from '../../../../asp/src/service.js';
 import type { ServiceState } from '../../../../asp/src/state.js';
-import { MemoryStore, PoolWallet, WithdrawalProver, aspAssociationSet } from '../../src/index.js';
+import { MemoryStore, PoolWallet, USDG_DOMAIN, WalletRecycleSubmitter, WithdrawalProver, aspAssociationSet, recycleFrom } from '../../src/index.js';
 
 const RPC = process.env.FORK_RPC ?? 'http://127.0.0.1:8545';
 const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168' as Address;
@@ -66,12 +67,15 @@ const relayer = privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751b
 
 const erc20 = parseAbi(['function transfer(address,uint256) returns (bool)', 'function approve(address,uint256) returns (bool)', 'function balanceOf(address) view returns (uint256)']);
 const vaultAbi = parseAbi([
+  'function wire(address,address,address,address,uint256)',
+  'function lockedRemaining() view returns (uint256)',
   'function deposit(uint256,address) returns (uint256)',
   'function convertToAssets(uint256) view returns (uint256)',
   'function previewWithdraw(uint256) view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
   'function approve(address,uint256) returns (bool)',
 ]);
+const routerAbi = parseAbi(['function deposit(uint256 assets, uint256 precommitment) returns (uint256)']);
 const funderAbi = parseAbi([
   'struct Withdrawal { address processooor; bytes data; }',
   'struct WithdrawProof { uint256[2] pA; uint256[2][2] pB; uint256[2] pC; uint256[8] pubSignals; }',
@@ -97,9 +101,11 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
   let entrypoint: Address;
   let pool: Address;
   let funder: Address;
+  let router: Address;
   let deployBlock: bigint;
   let poolWallet: PoolWallet;
   let ownerShares: bigint;
+  let lastSession: Address;
   const store = new MemoryStore();
   const aspDir = join(tmpdir(), `sodi-yield-asp-${Date.now()}`);
   let aspState: ServiceState;
@@ -159,7 +165,7 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
       impl,
       encodeFunctionData({ abi: ep.abi, functionName: 'initialize', args: [deployer.address, postman.address] }),
     ]);
-    vault = await deploy(artifact('SodiYieldVault.sol', 'SodiYieldVault'), [USDG, STEAK]);
+    vault = await deploy(artifact('SodiYieldVault.sol', 'SodiYieldVault'), [USDG, STEAK, deployer.address, deployer.address]);
     const libraries = {
       PoseidonT3: await deploy(artifact('PoseidonT3.sol', 'PoseidonT3')),
       PoseidonT4: await deploy(artifact('PoseidonT4.sol', 'PoseidonT4')),
@@ -168,6 +174,7 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     deployBlock = await publicClient.getBlockNumber({ cacheTime: 0 });
     await send(deployer, entrypoint, ep.abi, 'registerPool', [vault, pool, 1_000_000n, 0n, 100n]);
     funder = await deploy(artifact('SodiSessionFunder.sol', 'SodiSessionFunder'), [pool, vault, PROTOCOL_FEE_BPS]);
+    router = await deploy(artifact('SodiYieldDepositor.sol', 'SodiYieldDepositor'), [entrypoint, vault]);
 
     // USDG for the test, from the Morpho vault's idle balance (fork only).
     await testClient.impersonateAccount({ address: STEAK });
@@ -176,9 +183,9 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     for (const [to, amount] of [[deployer.address, 1_000_000n], [owner.address, 1_000_000_000n]] as const) {
       await publicClient.waitForTransactionReceipt({ hash: await steak.writeContract({ address: USDG, abi: erc20, functionName: 'transfer', args: [to, amount] }) });
     }
-    // Seed deposit, never withdrawn.
+    // Wire the only holders of shares, with the seed deposit (never withdrawn).
     await send(deployer, USDG, erc20, 'approve', [vault, 1_000_000n]);
-    await send(deployer, vault, vaultAbi, 'deposit', [1_000_000n, '0x000000000000000000000000000000000000dEaD']);
+    await send(deployer, vault, vaultAbi, 'wire', [pool, entrypoint, router, funder, 1_000_000n]);
 
     aspState = { chainId: 4663, entrypoint: entrypoint.toLowerCase(), lastScannedBlock: Number(deployBlock) - 1, deposits: [], published: [] };
     asp = startAsp(18432, () => aspState, join(aspDir, 'sets'));
@@ -200,13 +207,15 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
 
   afterAll(() => asp?.close());
 
-  it('an owner wraps 1000 USDG and deposits the shares into the audited pool', async () => {
-    await send(owner, USDG, erc20, 'approve', [vault, 1_000_000_000n]);
-    await send(owner, vault, vaultAbi, 'deposit', [1_000_000_000n, owner.address]);
-    ownerShares = await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [owner.address] });
-    const note = await poolWallet.deposit(ownerShares);
-    expect(BigInt(note.value)).toBe(ownerShares);
+  it('an owner deposits 1000 USDG through the router; the shares only ever exist in the pool', async () => {
+    const precommitment = await poolWallet.reservePrecommitment();
+    await send(owner, USDG, erc20, 'approve', [router, 1_000_000_000n]);
+    await send(owner, router, routerAbi, 'deposit', [1_000_000_000n, precommitment]);
+    await poolWallet.sync(); // finds the deposit by its precommitment
+    const note = store.load().notes[0]!;
+    ownerShares = BigInt(note.value);
     expect(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [pool] })).toBe(ownerShares);
+    expect(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [owner.address] })).toBe(0n);
     await approve();
   }, 300_000);
 
@@ -226,6 +235,7 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     const priceBefore = await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'convertToAssets', args: [1_000_000n] });
     const relayerBefore = await usdgOf(relayer.address);
     const { session, shares, tx } = await openSession(10_000_000n);
+    lastSession = session;
 
     const received = await usdgOf(session);
     console.log(`   session ${session} received ${Number(received) / 1e6} USDG for ${Number(shares) / 1e6} shares`);
@@ -240,7 +250,10 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     // The change stays in the pool as a share commitment of the owner's.
     expect(BigInt(store.load().notes[0]!.value)).toBe(ownerShares - shares);
     expect(store.load().notes[0]!.spendCount).toBe(1);
-    // The protocol fee went to everyone still holding shares.
+    // The protocol fee streams to everyone still in the pool over the next seven days.
+    expect(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'lockedRemaining' })).toBeGreaterThan(0n);
+    await testClient.increaseTime({ seconds: 7 * 86_400 });
+    await testClient.mine({ blocks: 1 });
     const priceAfter = await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'convertToAssets', args: [1_000_000n] });
     expect(priceAfter).toBeGreaterThan(priceBefore);
   }, 600_000);
@@ -251,4 +264,32 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     expect(await usdgOf(session)).toBeGreaterThanOrEqual(5_000_000n);
     expect(store.load().notes[0]!.spendCount).toBe(2);
   }, 600_000);
+
+  it('recycles what is left in a session into the yield pool, gaslessly, with the unchanged rx402 code', async () => {
+    // Move the last session's balance to a key we hold (on the fork), as if it had finished.
+    const key = generatePrivateKey();
+    const sessionAccount = privateKeyToAccount(key);
+    await testClient.impersonateAccount({ address: lastSession });
+    await testClient.setBalance({ address: lastSession, value: 10n ** 18n });
+    const left = await usdgOf(lastSession);
+    await publicClient.waitForTransactionReceipt({
+      hash: await createWalletClient({ chain, account: lastSession, transport: http(RPC) }).writeContract({ address: USDG, abi: erc20, functionName: 'transfer', args: [sessionAccount.address, left] }),
+    });
+    const before = store.load().notes.length;
+    const precommitment = await poolWallet.reservePrecommitment();
+    const tx = await recycleFrom(sessionAccount, {
+      publicClient: publicClient as never,
+      asset: USDG,
+      domain: USDG_DOMAIN,
+      submitter: new WalletRecycleSubmitter(wallet(relayer), publicClient as never, router), // the router speaks the recycler's interface
+      value: left,
+      precommitment,
+      now: Number((await publicClient.getBlock()).timestamp),
+    });
+    expect(await usdgOf(sessionAccount.address)).toBe(0n);
+    expect(await publicClient.getBalance({ address: sessionAccount.address })).toBe(0n);
+    await poolWallet.sync();
+    expect(store.load().notes).toHaveLength(before + 1);
+    console.log(`   recycled ${Number(left) / 1e6} USDG into the yield pool in ${tx}`);
+  }, 300_000);
 });
