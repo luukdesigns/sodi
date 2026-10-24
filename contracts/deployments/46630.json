@@ -14,7 +14,7 @@
     "Entrypoint": "0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce",
     "USDGPool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76",
     "SodiRecycler": "0x9727252654cbB19A057a5e052aCbAdd3F33e1055",
-    "SodiYieldDepositor": "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4"
+    "SodiYieldDepositor": "0x2F00b334f8fAD45e6dA9d82650ad61c3C439Fd84"
   },
   "pools": {
     "USDG": {
@@ -40,13 +40,13 @@
       ]
     },
     "syUSDG": {
-      "asset": "0x91bB1586FbBE361Cc5e7E6f019531C846AdeDCa9",
-      "pool": "0x115a373fD8F07b9FCb510A6b34e2511EF13655A3",
-      "scope": "13994081182496009932083811338458440464023949266221024982529584798961372033130",
+      "asset": "0x056014e26ce6E500Aef9aD9e5Ed1230abA2F3d89",
+      "pool": "0x67cE2735Da8950d7C00e2f35B519e366AA5C279b",
+      "scope": "2050252650937773792015342871694972901658019120769345921501955689812336719543",
       "minimumDepositAmount": "10000",
       "vettingFeeBPS": 0,
       "maxRelayFeeBPS": 100,
-      "depositThrough": "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4",
+      "depositThrough": "0x2F00b334f8fAD45e6dA9d82650ad61c3C439Fd84",
       "depositAsset": "0x7E955252E15c84f5768B83c41a71F9eba181802F"
     }
   },
@@ -102,40 +102,82 @@
   "forwarders": [
     "0x2302B8751FC074F2fF7f3642d84be36438EF37AF",
     "0x9727252654cbB19A057a5e052aCbAdd3F33e1055",
-    "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4"
+    "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4",
+    "0x2F00b334f8fAD45e6dA9d82650ad61c3C439Fd84"
   ],
   "yieldPool": {
     "status": "prototype on testnet; Morpho is not on testnet, so the vault invests in a plain ERC-4626 stand-in with no yield",
     "deployedAt": "2026-10-24",
-    "block": 141968474,
-    "standInVault": "0xf215B28Ab6ea83c9E93fBB89ef84e16F9338fb39",
-    "vault": "0x91bB1586FbBE361Cc5e7E6f019531C846AdeDCa9",
-    "pool": "0x115a373fD8F07b9FCb510A6b34e2511EF13655A3",
-    "scope": "13994081182496009932083811338458440464023949266221024982529584798961372033130",
-    "router": "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4",
-    "funder": "0xd7E36Fc0Cc4FA91Bde238b805eC901B0b8e18777",
+    "block": 141977953,
+    "standInVault": "0x88766c27cBD76CC2B988d053E2892C686D5cBC2c",
+    "vault": "0x056014e26ce6E500Aef9aD9e5Ed1230abA2F3d89",
+    "pool": "0x67cE2735Da8950d7C00e2f35B519e366AA5C279b",
+    "scope": "2050252650937773792015342871694972901658019120769345921501955689812336719543",
+    "router": "0x2F00b334f8fAD45e6dA9d82650ad61c3C439Fd84",
+    "funder": "0x345C90ed12C12417998f76D77862C10020F51b4E",
     "owner": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
     "guardian": "0x41db96BB10977743C14b4DcBA3A02617b5f356Ae",
     "protocolFeeBPS": 50,
     "minimumDepositAmount": "10000",
     "seed": "1000",
     "transactions": "broadcast/DeployYieldPool.s.sol/46630/run-latest.json",
-    "liveRun": {
-      "description": "packages/rx402/demo/yield-testnet-live.ts on 2026-10-24: the owner deposited through the router; two of the live agent's old-pool notes were withdrawn with ZK proofs to fresh addresses and recycled gaslessly into the yield pool through the router; the approval service screened all three against their real depositors (never the router) and approved them",
-      "ownerDeposit": "0x34c26513bddaad4315058288dad7dfb4ce2a148a72b3af56097dad9c5fd28ff5",
-      "migrations": [
-        {
-          "withdrawal": "0x66a662bbd9335e1369d524a86919e6397ad7aefbd98c62b6b6e7e2411dd68fc5",
-          "via": "0x06134816eFFFF950C64bD29e7f12570287Fa9957",
-          "recycle": "0x515304244a6885924470680c606d485234c490ccba21232b00f20b950c6879ef"
+    "superseded": [
+      {
+        "status": "prototype on testnet; Morpho is not on testnet, so the vault invests in a plain ERC-4626 stand-in with no yield",
+        "deployedAt": "2026-10-24",
+        "block": 141968474,
+        "standInVault": "0xf215B28Ab6ea83c9E93fBB89ef84e16F9338fb39",
+        "vault": "0x91bB1586FbBE361Cc5e7E6f019531C846AdeDCa9",
+        "pool": "0x115a373fD8F07b9FCb510A6b34e2511EF13655A3",
+        "scope": "13994081182496009932083811338458440464023949266221024982529584798961372033130",
+        "router": "0xDb5a49e15f6e8915C840b5c34A8f4F07B4796eD4",
+        "funder": "0xd7E36Fc0Cc4FA91Bde238b805eC901B0b8e18777",
+        "owner": "0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d",
+        "guardian": "0x41db96BB10977743C14b4DcBA3A02617b5f356Ae",
+        "protocolFeeBPS": 50,
+        "minimumDepositAmount": "10000",
+        "seed": "1000",
+        "transactions": "broadcast/DeployYieldPool.s.sol/46630/run-1792858261426.json",
+        "liveRun": {
+          "description": "packages/rx402/demo/yield-testnet-live.ts on 2026-10-24: the owner deposited through the router; two of the live agent's old-pool notes were withdrawn with ZK proofs to fresh addresses and recycled gaslessly into the yield pool through the router; the approval service screened all three against their real depositors (never the router) and approved them",
+          "ownerDeposit": "0x34c26513bddaad4315058288dad7dfb4ce2a148a72b3af56097dad9c5fd28ff5",
+          "migrations": [
+            {
+              "withdrawal": "0x66a662bbd9335e1369d524a86919e6397ad7aefbd98c62b6b6e7e2411dd68fc5",
+              "via": "0x06134816eFFFF950C64bD29e7f12570287Fa9957",
+              "recycle": "0x515304244a6885924470680c606d485234c490ccba21232b00f20b950c6879ef"
+            },
+            {
+              "withdrawal": "0xc5cb4d435cc79197175c874b3cf7bed8bde24e1032ebca0727bedc063199ebfe",
+              "via": "0xB8A72158475e5a774C0F8Df51FcB3dB7616eA735",
+              "recycle": "0xf85b185096af21a50c5144b796146c68698b4fadab2c4ab19202d10fc92c3629"
+            }
+          ],
+          "aspRoot": "0xa64c367ea4100e330ea6ef1fb7075c01ce6b5f6cb9e40a25e842d79de1f3944e"
         },
-        {
-          "withdrawal": "0xc5cb4d435cc79197175c874b3cf7bed8bde24e1032ebca0727bedc063199ebfe",
-          "via": "0xB8A72158475e5a774C0F8Df51FcB3dB7616eA735",
-          "recycle": "0xf85b185096af21a50c5144b796146c68698b4fadab2c4ab19202d10fc92c3629"
-        }
-      ],
-      "aspRoot": "0xa64c367ea4100e330ea6ef1fb7075c01ce6b5f6cb9e40a25e842d79de1f3944e"
+        "exit": {
+          "description": "demo/yield-testnet-exit-v1.ts: the owner deposit was ragequit through the router with a real proof (0.014 USDG back to the owner); the two migrated notes were withdrawn through the first funder to a kept address (0.060633 USDG), to recycle into the second stack",
+          "ownerRagequit": "0x7626adafd4d42c95c8868804fa648d5c8c63a13bddef84b4bdafb51bc1a6141a",
+          "withdrawals": [
+            "0x1694427e66b5446b2580a0c0a765053df096000a9f518afa71eb9d2a08f7e04a",
+            "0xff1c8a0463cc6941f1edb195707a91ac9080e44d1c68f338b463f2ee880dea39"
+          ],
+          "holder": "0x4c9E7f500D1ea96dBaF6445625DcEc3896ec3600"
+        },
+        "supersededBecause": "its session funder paid \"at least a minimum\"; replaced by one that pays sessions exactly their amount, and the vault fixes its funder at wiring"
+      }
+    ],
+    "liveRun": {
+      "description": "packages/rx402/demo/yield-testnet-session.ts on 2026-10-24: the owner deposited through the router; the funds withdrawn from the first stack were recycled in gaslessly; the approval service screened both against their real depositors; the live agent opened a session through the relayer /fund (sized in shares, exactly 0.02 USDG) and paid an x402 merchant 0.001 USDG from it",
+      "ownerDeposit": "0x9eb7e334d1143136050918eca240b8d79c38879d8ac814b3ae57f48b0045be6e",
+      "recycle": "0x797a199b27c1bf73813bb94f2733812b7c75b1ba34b446ecc09a10618fbe68f6",
+      "aspRoot": "0xb920023ced32aaafcb5397d223a5ae66ca281b9a9ec8ecae4e439d2dbdcd44fd",
+      "session": {
+        "address": "0xe55076Dd911c84e0D49175935AC1690291E622c1",
+        "budget": "20000",
+        "fundingTx": "0xd4a6ced48cba536316215aa8d2f16232ca87ba57eec913d52024d97fb552cf89",
+        "payment": "0x535b1ca069414cd8855f8f33a5a48ee06835fce23104d8f769a1159c155edd70"
+      }
     }
   }
 }
