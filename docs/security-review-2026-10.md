@@ -102,9 +102,45 @@ Each finding above "low" came with a demonstration: a failing Foundry test, a vi
 ## Since the review
 
 - **The pool secret on the agent's machine.** The review took the agent's host as trusted. An agent holding the mnemonic can withdraw the whole pool, and its caps are enforced in its own code. The new [session issuer](../issuer) holds the mnemonic and the hard limits elsewhere; the agent holds only a key that can ask for sessions. Tests: `issuer/test`.
-- **Who really deposited.** Deposits made through a forwarder (the recycler, and the yield router) were recorded with the forwarder as depositor, so the approval service screened the forwarder, and a blocklisted address could have recycled into the pool and been approved. The approval service now takes the real depositor from the forwarder's own event, fails closed when there isn't one, and denies other contract depositors unless allowed. Found before any outside deposit used the recycler. Tests: `asp/test`.
-- **Ragequit after a partial withdrawal.** The first recycler recorded ragequit refunds by commitment, which changes when part of a deposit is withdrawn, so such a deposit couldn't be ragequit through it (it could still be withdrawn privately). Redeployed keyed by label. The SDK now has a ragequit prover, tested with real proofs through the yield router.
+- **Who really deposited, and ragequit after a partial withdrawal:** see findings N1 and N2 below.
 - **Leftover funds.** The new [SodiRecycler](../contracts/README.md#sodirecycler) puts leftover session funds and stealth payments back into the pool. Its authorization binds the deposit and the fee, so a front-runner or the relayer can't redirect it, and a ragequit can only return funds to where they came from. The client won't recycle a session while a payment it signed could still be settled. Tests: `contracts/test/SodiRecycler.t.sol`, `issuer/test/e2e/recycle.test.ts`.
+
+## Found after the review
+
+Two bugs in code written after the review, both in the recycler deployed to testnet on 2026-10-24.
+
+| ID | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| N1 | High | The approval service screened the recycler, not the address it recycled for, so a blocklisted address could have been approved | Fixed |
+| N2 | Medium | A recycled deposit couldn't be ragequit through the recycler after part of it was withdrawn | Fixed, recycler redeployed |
+
+### N1: blocklist bypass through the recycler
+
+**What.** The pool records whoever calls it as a deposit's depositor. For a deposit made through the recycler, that is the recycler contract, and the approval service screened the depositor the pool recorded. So any address, including one on the blocklist, could have put USDG into the pool through the recycler and had the deposit approved. The screening would have kept running and reporting results as if it were working.
+
+**Timeline (2026-10-24, UTC).**
+
+- 13:37: the first SodiRecycler, `0x2302…37AF`, deployed to testnet.
+- 13:56: two of the live agent's own sessions recycled through it.
+- About 15:50: raised in review of the yield-pool wiring plan (the yield router has the same shape), and confirmed against the code.
+- 16:06: replacement recycler deployed (for N2).
+- 16:08: approval-service fix pushed.
+
+**Impact.** Live on testnet for about two and a half hours. The first recycler emitted exactly two `Recycled` events, both from the live agent's own session addresses (`0x1dc9…7C75`, `0x1f6A…70eE`). No outside address used it, and nothing was wrongly approved. Testnet only; nothing on mainnet.
+
+**Fix.** The approval service treats the recycler and the yield router as trusted forwarders, listed in the deployment file. For a deposit they make, the depositor it screens is the address named in their own event for the same commitment, in the same transaction. If there is no such event, the deposit is denied. Every other depositor, contract or ordinary account, is screened as itself. As a guard against forwarders the service doesn't know about, a contract depositor that emits its own event about the deposit in the same transaction (which is what a forwarder does) is denied unless an operator allows it. Re-run against live testnet: the two recycled deposits now resolve to the sessions that made them.
+
+**Tests.** `asp/test/service.test.ts`: a blocklisted depositor going through the router or the recycler is denied; a missing or mismatched forwarder event fails closed; a forwarder-like contract is denied; a Safe depositing directly is approved and a blocklisted Safe is denied; older records are re-classified. On a mainnet fork through the real yield router, a blocklisted depositor is denied (`packages/rx402/test/e2e-mainnet`).
+
+### N2: ragequit through the recycler after a partial withdrawal
+
+**What.** The recycler, the depositor the pool records, forwards ragequits back to the address the funds came from, and it recorded that address against the deposit's commitment. A withdrawal replaces a deposit's commitment with a new one; only its label stays the same. So once part of a recycled deposit had been withdrawn, a ragequit through the recycler failed with "unknown commitment". The yield router had the same code but was fixed before it was deployed.
+
+**Impact.** One live deposit was affected: the one recycled from `0x1dc9…7C75`, partly withdrawn at 14:00 UTC. Its remaining 0.00465 USDG can't be ragequit through the first recycler. It can still be withdrawn privately, like any note, so nothing is lost. A ragequit is the exit that needs no relayer and no approval, so the bug would have bitten exactly when that exit mattered.
+
+**Fix.** The recycler and the router record refunds by label. Recycler redeployed at 16:06 UTC (`0x9727…1055`). The first stays a trusted forwarder for the approval service, since deposits were made through it. The SDK gained a ragequit prover (`RagequitProver`, over the hash-checked commitment circuit) and handles ragequits when syncing.
+
+**Tests.** Foundry: a ragequit of what's left after a partial withdrawal, through the recycler and through the router. Real proofs: a ragequit through the yield router on a mainnet fork, and live on testnet, where the router returned the owner's deposit (`0x7626…141a`).
 
 ## Open and accepted
 

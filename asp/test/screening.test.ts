@@ -75,9 +75,14 @@ describe('approvedLabels', () => {
     expect(screen(deposit({ depositor: '0xrouter', kind: 'unresolved', via: '0xrouter' }), policy(), 9_999).status).toBe('denied');
   });
 
-  it('denies contract depositors unless allowed', () => {
-    expect(screen(deposit({ kind: 'contract' }), policy(), 9_999).status).toBe('denied');
-    expect(screen(deposit({ kind: 'contract' }), policy({ allowedContracts: new Set(['0xabc']) }), 9_999).status).toBe('approved');
+  it('screens a contract depositor, such as a Safe, as itself', () => {
+    expect(screen(deposit({ kind: 'contract' }), policy(), 9_999).status).toBe('approved');
+    expect(screen(deposit({ kind: 'contract' }), policy({ blockedAddresses: new Set(['0xabc']) }), 9_999).status).toBe('denied');
+  });
+
+  it('denies a forwarder it does not know, unless allowed', () => {
+    expect(screen(deposit({ kind: 'unknown-forwarder' }), policy(), 9_999).status).toBe('denied');
+    expect(screen(deposit({ kind: 'unknown-forwarder' }), policy({ allowedContracts: new Set(['0xabc']) }), 9_999).status).toBe('approved');
   });
 
   it("keeps a deposit pending until it's known who made it", () => {

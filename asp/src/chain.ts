@@ -29,19 +29,21 @@ export const forwarderEvents = parseAbi([
 ]);
 
 /**
- * Establishes who really funded a deposit. A trusted forwarder must have emitted an event for this
- * exact commitment in the same transaction; otherwise the deposit is `unresolved` and will be denied.
- * Any other contract depositor is a `contract`. EIP-7702 delegated accounts count as ordinary accounts.
+ * Establishes who really funded a deposit.
+ *
+ * - Through a trusted forwarder (the recycler, the yield router): the address the forwarder names in its
+ *   own event for this exact commitment, in the same transaction. No such event: `unresolved`.
+ * - Any other depositor, ordinary account or contract (a Safe, say), is screened as itself.
+ * - Except a contract that emits its own event about this deposit in the same transaction, naming
+ *   someone else: that is what a forwarder does, and the approval service can't see for whom. It is
+ *   `unknown-forwarder`, denied unless an operator allows it. A forwarder that emits nothing can't be
+ *   told apart from a Safe; that limit is documented.
  */
 export async function classifyDepositor(
   client: PublicClient,
   d: { depositor: string; commitment: string; txHash: string },
   forwarders: ReadonlySet<string>,
-): Promise<{ kind: 'eoa' | 'forwarded' | 'unresolved' | 'contract'; depositor: string; via?: string }> {
-  const isContract = async (a: string) => {
-    const code = await client.getCode({ address: a as Address });
-    return !!code && code !== '0x' && !code.toLowerCase().startsWith('0xef0100');
-  };
+): Promise<{ kind: 'eoa' | 'contract' | 'forwarded' | 'unresolved' | 'unknown-forwarder'; depositor: string; via?: string }> {
   const seen = d.depositor.toLowerCase();
   if (forwarders.has(seen)) {
     const receipt = await client.getTransactionReceipt({ hash: d.txHash as Hex });
@@ -49,11 +51,18 @@ export async function classifyDepositor(
       (l) => l.address.toLowerCase() === seen && l.args.commitment === BigInt(d.commitment),
     );
     if (!match) return { kind: 'unresolved', depositor: seen, via: seen };
-    const from = match.args.from.toLowerCase();
-    // A contract calling the forwarder could itself be depositing for others.
-    return { kind: (await isContract(from)) ? 'contract' : 'forwarded', depositor: from, via: seen };
+    return { kind: 'forwarded', depositor: match.args.from.toLowerCase(), via: seen };
   }
-  return { kind: (await isContract(seen)) ? 'contract' : 'eoa', depositor: seen };
+  const code = await client.getCode({ address: seen as Address });
+  // EIP-7702 delegated accounts are ordinary accounts.
+  if (!code || code === '0x' || code.toLowerCase().startsWith('0xef0100')) return { kind: 'eoa', depositor: seen };
+  // A contract: does it emit its own event about this very deposit?
+  const receipt = await client.getTransactionReceipt({ hash: d.txHash as Hex });
+  const word = BigInt(d.commitment).toString(16).padStart(64, '0');
+  const mentionsDeposit = receipt.logs.some(
+    (l) => l.address.toLowerCase() === seen && (l.topics.some((t) => t?.toLowerCase().endsWith(word)) || l.data.toLowerCase().includes(word)),
+  );
+  return { kind: mentionsDeposit ? 'unknown-forwarder' : 'contract', depositor: seen };
 }
 
 export const entrypointAbi = parseAbi([

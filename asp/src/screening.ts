@@ -9,13 +9,15 @@ export interface DepositRecord {
   depositor: string;
   /**
    * How the depositor was established:
-   *  eoa         the pool's depositor is an ordinary account
-   *  forwarded   made through the trusted forwarder in `via`; `depositor` comes from its event
-   *  unresolved  made through a trusted forwarder, but no matching event names the real depositor
-   *  contract    the pool's depositor is some other contract, which could be hiding its users
+   *  eoa                an ordinary account, screened as itself
+   *  contract           a contract (a Safe, say), screened as itself
+   *  forwarded          made through the trusted forwarder in `via`; `depositor` comes from its event
+   *  unresolved         made through a trusted forwarder, but no matching event names the real depositor
+   *  unknown-forwarder  a contract that emitted its own event about this deposit, as a forwarder does,
+   *                     so it may be depositing for someone the service can't see
    * Absent on records from before this was tracked; they are classified on the next cycle.
    */
-  kind?: 'eoa' | 'forwarded' | 'unresolved' | 'contract';
+  kind?: 'eoa' | 'contract' | 'forwarded' | 'unresolved' | 'unknown-forwarder';
   via?: string;
   value: string;
   commitment: string;
@@ -35,8 +37,8 @@ export interface ScreeningPolicy {
   /** Seconds a deposit must wait before approval, giving operators a window to deny it. */
   vettingDelaySeconds: number;
   /**
-   * Lower-cased contracts that may deposit directly (a known smart wallet, say). Any other contract is
-   * denied: it could be depositing for users the approval service can't see.
+   * Lower-cased contracts allowed to deposit even though they look like forwarders (they emit their own
+   * event about the deposit). Ordinary contracts such as Safes don't need to be listed.
    */
   allowedContracts?: ReadonlySet<string>;
 }
@@ -57,8 +59,8 @@ export function screen(
   if (policy.blockedAddresses.has(deposit.depositor.toLowerCase())) {
     return { status: 'denied', reason: deposit.via ? `depositor (through ${deposit.via}) is on the block list` : 'depositor is on the block list' };
   }
-  if (deposit.kind === 'contract' && !policy.allowedContracts?.has(deposit.depositor.toLowerCase())) {
-    return { status: 'denied', reason: 'deposited by a contract the approval service does not know; it could be depositing for others' };
+  if (deposit.kind === 'unknown-forwarder' && !policy.allowedContracts?.has(deposit.depositor.toLowerCase())) {
+    return { status: 'denied', reason: 'deposited by a contract that reports the deposit as made for someone else, and is not a trusted forwarder' };
   }
   if (deposit.kind === undefined) return { status: 'pending' };
   if (policy.deniedLabels.has(deposit.label)) {

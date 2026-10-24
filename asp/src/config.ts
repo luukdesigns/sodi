@@ -67,7 +67,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): Config {
 export interface Blocklist {
   addresses: string[];
   labels: string[];
-  /** Contracts allowed to deposit directly, e.g. known smart wallets. All other contracts are denied. */
+  /** Contracts allowed to deposit even though they look like forwarders (they emit their own event about the deposit). */
   allowedContracts: string[];
 }
 

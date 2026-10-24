@@ -21,7 +21,7 @@ const WALLET = '0x00000000000000000000000000000000000000f1';
 
 /** An Entrypoint and pool, as far as the approval service can see them. */
 function fakeChain() {
-  const deposits: { label: bigint; depositor: string; block: bigint; commitment: bigint; forwarded?: { by: string; from: string; commitment: bigint; event: 'Recycled' | 'Deposited' } }[] = [];
+  const deposits: { label: bigint; depositor: string; block: bigint; commitment: bigint; forwarded?: { by: string; from: string; commitment: bigint; event: 'Recycled' | 'Deposited' }; safeEvent?: boolean }[] = [];
   const code = new Map<string, string>([
     [ROUTER, '0x6001'],
     [RECYCLER, '0x6001'],
@@ -47,7 +47,11 @@ function fakeChain() {
     getTransactionReceipt: async ({ hash }: { hash: string }) => {
       const d = deposits.find((x) => BigInt(hash) === x.label)!;
       const f = d.forwarded;
-      if (!f) return { logs: [] };
+      if (!f) {
+        // A Safe's own event: ExecutionSuccess(bytes32 txHash, uint256 payment), nothing about the deposit.
+        const safeLog = { address: d.depositor, topics: [`0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e`], data: `0x${'ab'.repeat(32)}${'00'.repeat(32)}`, blockNumber: d.block, logIndex: 0, transactionHash: hash };
+        return { logs: d.safeEvent ? [safeLog] : [] };
+      }
       const event = forwarderEvents.find((e) => e.name === f.event)!;
       const data =
         f.event === 'Recycled'
@@ -79,7 +83,7 @@ function fakeChain() {
     publicClient,
     walletClient,
     published,
-    deposit: (label: bigint, depositor: string, block = head) => deposits.push({ label, depositor, block, commitment: label * 10n }),
+    deposit: (label: bigint, depositor: string, block = head, safeEvent = false) => deposits.push({ label, depositor, block, commitment: label * 10n, safeEvent }),
     /** A deposit the pool credits to `by`, which emitted `event` naming `from` for `commitment`. */
     forwarded: (label: bigint, by: string, from: string, event: 'Recycled' | 'Deposited' = 'Deposited', commitment = label * 10n) =>
       deposits.push({ label, depositor: by, block: head, commitment: label * 10n, forwarded: { by, from, commitment, event } }),
@@ -206,27 +210,47 @@ describe('approval service cycle', () => {
       expect(chain.published).toHaveLength(0);
     });
 
-    it("ignores events from contracts it doesn't trust, and denies their deposits", async () => {
+    it("denies a contract it doesn't trust that reports the deposit as made for someone else", async () => {
       const chain = fakeChain();
       chain.setCode(EVIL, '0x6001');
-      chain.forwarded(7n, EVIL, SOMEONE); // an untrusted contract claiming to forward for someone clean
+      chain.forwarded(7n, EVIL, SOMEONE); // an unknown contract claiming to forward for someone clean
       const state = fresh();
       await runCycle(ctx(chain, state));
-      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'contract', depositor: EVIL });
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'unknown-forwarder', depositor: EVIL });
+      // An operator can allow it once it's known.
+      const chain2 = fakeChain();
+      chain2.setCode(EVIL, '0x6001');
+      chain2.forwarded(7n, EVIL, SOMEONE);
+      const state2 = fresh();
+      await runCycle(ctx(chain2, state2, [], [EVIL]));
+      expect(statusOf(state2, '7').status).toBe('approved');
     });
 
-    it('denies a contract that deposits through the router, which could be depositing for others', async () => {
+    it('approves a Safe depositing directly, screened as itself', async () => {
       const chain = fakeChain();
-      chain.forwarded(7n, ROUTER, WALLET);
+      chain.deposit(7n, WALLET, undefined, true); // with the Safe's own ExecutionSuccess event
       const state = fresh();
       await runCycle(ctx(chain, state));
-      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'contract', depositor: WALLET, via: ROUTER });
-      // An operator can allow a known contract, such as a smart wallet, before it deposits.
-      const chain2 = fakeChain();
-      chain2.forwarded(7n, ROUTER, WALLET);
-      const state2 = fresh();
-      await runCycle(ctx(chain2, state2, [], [WALLET]));
-      expect(statusOf(state2, '7').status).toBe('approved');
+      expect(statusOf(state, '7')).toMatchObject({ status: 'approved', kind: 'contract', depositor: WALLET });
+    });
+
+    it('denies a blocklisted Safe', async () => {
+      const chain = fakeChain();
+      chain.deposit(7n, WALLET, undefined, true);
+      const state = fresh();
+      await runCycle(ctx(chain, state, [WALLET]));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'contract', depositor: WALLET });
+    });
+
+    it('screens a Safe that deposits through the router as the Safe', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, WALLET);
+      chain.forwarded(8n, ROUTER, EVIL);
+      chain.setCode(EVIL, '0x6001');
+      const state = fresh();
+      await runCycle(ctx(chain, state, [EVIL]));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'approved', kind: 'forwarded', depositor: WALLET, via: ROUTER });
+      expect(statusOf(state, '8')).toMatchObject({ status: 'denied', depositor: EVIL, via: ROUTER });
     });
 
     it('treats an EIP-7702 delegated account as an ordinary account', async () => {

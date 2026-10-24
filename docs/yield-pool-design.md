@@ -65,7 +65,7 @@ The only way in. It takes USDG, mints shares and deposits them into the pool in 
 
 The pool records the router as depositor, so:
 
-- **The approval service screens the real depositor**, named in the router's own event for the same commitment, not the router. A router deposit without that event is denied, and so is a contract calling the router (it could be depositing for others). Without this, every deposit would look like the router's and the screening would pass everything while appearing to work.
+- **The approval service screens the real depositor**, named in the router's own event for the same commitment, not the router. A router deposit without that event is denied. A Safe depositing through the router is screened as the Safe. Without this, every deposit would look like the router's and the screening would pass everything while appearing to work.
 - **The router forwards ragequits:** it redeems the shares and sends the USDG back to the address that deposited, never anywhere else. Refunds are keyed by the deposit's label, so what's left after sessions can still be ragequit. It's the one way out without a relayer, so it is tested with real ragequit proofs.
 
 The router is small, immutable and holds nothing between calls, but every deposit goes through it: it is in the audit scope from the start.
