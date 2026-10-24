@@ -51,3 +51,24 @@ export interface StandingGrant {
   since: number;
   revokedAt?: number;
 }
+
+/**
+ * Contracts an auditor accepts disclosures from. An owner could otherwise point the auditor at a
+ * contract of their own that emits whatever "messages" they like, attributed to anyone.
+ */
+export interface TrustedContracts {
+  a2a: Address[];
+  memory: Address[];
+  erc8183Hooks: Address[];
+  pools: { pool: Address; entrypoint: Address }[];
+}
+
+/** The Sodi deployments, by chain. Pass your own list to the Auditor to override. */
+export const SODI_DEPLOYMENTS: Record<number, TrustedContracts> = {
+  46630: {
+    a2a: ['0xcc20a2E48943BAE122Cb9DCD92ca5ceb190E9d62'],
+    memory: ['0x5792659446E32eF320Dd19b42cc27a3737ac710e'],
+    erc8183Hooks: ['0x31eed88eb741f0e964f5726a7d1900f712c8eab5'],
+    pools: [{ pool: '0x8cddbb1C33ce49aB72FD1765649835935604BF76', entrypoint: '0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce' }],
+  },
+};

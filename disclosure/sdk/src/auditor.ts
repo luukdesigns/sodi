@@ -11,7 +11,7 @@ import {
 } from 'viem';
 
 import { verifyPoolDisclosure, type VerifiedPoolHistory } from './pool.js';
-import type { DisclosedItem, Grant } from './types.js';
+import { type DisclosedItem, type Grant, SODI_DEPLOYMENTS, type TrustedContracts } from './types.js';
 
 const events = {
   a2a: parseAbiItem('event Posted(uint256 indexed channelId, address indexed author, bytes envelope)'),
@@ -52,7 +52,16 @@ export class Auditor {
     /** The auditor's messaging identity (initialized), which receives grants. */
     private readonly identity: A2AClient,
     private readonly blobs?: BlobStore,
+    /** Contracts disclosures may come from; defaults to the Sodi deployments for the chain. */
+    private readonly trusted?: TrustedContracts,
   ) {}
+
+  private async trustedFor(chainId: number): Promise<TrustedContracts> {
+    if ((await this.publicClient.getChainId()) !== chainId) throw new Error('item is for a different chain');
+    const t = this.trusted ?? SODI_DEPLOYMENTS[chainId];
+    if (!t) throw new Error(`no trusted Sodi contracts known for chain ${chainId}; pass them to the Auditor`);
+    return t;
+  }
 
   /** Grants received, with multi-part grants merged. */
   async grants(fromBlock: bigint): Promise<ReceivedGrant[]> {
@@ -60,7 +69,9 @@ export class Auditor {
     const parts = inbox.filter((m) => m.type === 'sodi-disclosure');
     const merged = new Map<string, ReceivedGrant>();
     for (const m of parts) {
+      // Anyone can message the auditor, so treat every grant as untrusted input.
       const g = m.body as Grant;
+      if (!isGrant(g)) continue;
       // A grant only speaks for the account that sent it on-chain.
       if (g.owner.toLowerCase() !== m.from.toLowerCase()) continue;
       const id = g.part?.grantId ?? m.id;
@@ -80,12 +91,18 @@ export class Auditor {
     const inbox = await this.identity.inbox({ fromBlock });
     return inbox
       .filter((m) => m.type === 'sodi-standing-grant' || m.type === 'sodi-standing-revoked')
-      .map((m) => ({ type: m.type, from: m.from, ...(m.body as { scope: string }) }));
+      .filter((m) => typeof (m.body as { scope?: unknown })?.scope === 'string')
+      // Take only the scope from the body: it must not be able to override who sent the notice.
+      .map((m) => ({ type: m.type, from: m.from, scope: (m.body as { scope: string }).scope }));
   }
 
   /** Fetches and decrypts one disclosed item, verifying it against the chain. */
   async read(item: DisclosedItem): Promise<DisclosedRecord> {
-    if ((await this.publicClient.getChainId()) !== item.chainId) throw new Error('item is for a different chain');
+    const trusted = await this.trustedFor(item.chainId);
+    const allowed = { a2a: trusted.a2a, memory: trusted.memory, 'erc8183-deliverable': trusted.erc8183Hooks, 'erc8183-review': trusted.erc8183Hooks }[item.kind];
+    if (!allowed?.some((c) => c.toLowerCase() === item.contract.toLowerCase())) {
+      throw new Error(`${item.contract} is not a trusted ${item.kind} contract`);
+    }
     const [txHash, idx] = item.ref.split(':') as [Hex, string];
     const receipt = await this.publicClient.getTransactionReceipt({ hash: txHash });
     const log = receipt.logs.find((l) => l.logIndex === Number(idx));
@@ -156,7 +173,14 @@ export class Auditor {
   }
 
   async verifyPool(grant: Grant, fromBlock: bigint): Promise<VerifiedPoolHistory[]> {
-    return Promise.all((grant.pool ?? []).map((p) => verifyPoolDisclosure(this.publicClient, p, fromBlock)));
+    return Promise.all(
+      (grant.pool ?? []).map(async (p) => {
+        const trusted = await this.trustedFor(p.chainId);
+        const ok = trusted.pools.some((t) => t.pool.toLowerCase() === p.pool.toLowerCase() && t.entrypoint.toLowerCase() === p.entrypoint.toLowerCase());
+        if (!ok) throw new Error(`${p.pool} is not a trusted pool`);
+        return verifyPoolDisclosure(this.publicClient, p, fromBlock);
+      }),
+    );
   }
 
   /** Versions of an owner's memory slot that were shared with this auditor under a standing grant. */
@@ -181,4 +205,15 @@ export class Auditor {
     }
     return out;
   }
+}
+
+function isGrant(g: unknown): g is Grant {
+  if (typeof g !== 'object' || g === null) return false;
+  const x = g as Record<string, unknown>;
+  return (
+    typeof x.owner === 'string' &&
+    Array.isArray(x.items) &&
+    x.items.every((i) => typeof i === 'object' && i !== null && typeof (i as { ref?: unknown }).ref === 'string') &&
+    (x.pool === undefined || Array.isArray(x.pool))
+  );
 }

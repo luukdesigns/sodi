@@ -67,7 +67,7 @@ const grantTxs = await discloser.send({ auditor: ada.address, note: 'Q4 review: 
 console.log(`   ${items.length} items, sent in ${grantTxs[0]}`);
 
 console.log('3. Ada reads the grant and checks every item against the chain');
-const auditor = new Auditor(publicClient, ada);
+const auditor = new Auditor(publicClient, ada, undefined, { a2a: [registry], memory: [memoryContract], erc8183Hooks: [hook], pools: [] });
 const [grant] = await auditor.grants(start);
 const { records, failures } = await auditor.readGrant(grant!);
 for (const r of records) console.log(`   ${r.kind.padEnd(20)} by ${r.author.slice(0, 10)}…  ${JSON.stringify(r.data).slice(0, 70)}`);

@@ -100,8 +100,9 @@ export interface Authorization {
 }
 
 /**
- * Signs an EIP-3009 transfer authorization from the session account, to `payTo` or, for a merchant
- * that offered one, to a one-time stealth address.
+ * Signs an EIP-3009 authorization from the session account: a TransferWithAuthorization to `payTo`
+ * or, for a stealth payment, a ReceiveWithAuthorization to the merchant's settler with the nonce that
+ * commits to the stealth address.
  */
 export async function signAuthorization(
   account: LocalAccount,
@@ -109,6 +110,7 @@ export async function signAuthorization(
   chainId: number,
   nowSeconds = Math.floor(Date.now() / 1000),
   to: Address = requirement.payTo,
+  opts: { nonce?: Hex; receive?: boolean } = {},
 ): Promise<{ authorization: Authorization; signature: Hex }> {
   const authorization: Authorization = {
     from: account.address,
@@ -117,29 +119,26 @@ export async function signAuthorization(
     validAfter: 0n,
     // The merchant picks the timeout; never sign anything that stays valid for more than 5 minutes.
     validBefore: BigInt(nowSeconds + Math.min(Math.max(requirement.maxTimeoutSeconds, 10), MAX_VALIDITY_SECONDS)),
-    nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
+    nonce: opts.nonce ?? toHex(crypto.getRandomValues(new Uint8Array(32))),
   };
-  const signature = await account.signTypedData({
-    domain: {
-      // USDG's EIP-712 domain; servers may override via `extra`.
-      name: requirement.extra?.name ?? 'Global Dollar',
-      version: requirement.extra?.version ?? '1',
-      chainId,
-      verifyingContract: requirement.asset,
-    },
-    types: {
-      TransferWithAuthorization: [
-        { name: 'from', type: 'address' },
-        { name: 'to', type: 'address' },
-        { name: 'value', type: 'uint256' },
-        { name: 'validAfter', type: 'uint256' },
-        { name: 'validBefore', type: 'uint256' },
-        { name: 'nonce', type: 'bytes32' },
-      ],
-    },
-    primaryType: 'TransferWithAuthorization',
-    message: authorization,
-  });
+  const fields = [
+    { name: 'from', type: 'address' },
+    { name: 'to', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'validAfter', type: 'uint256' },
+    { name: 'validBefore', type: 'uint256' },
+    { name: 'nonce', type: 'bytes32' },
+  ] as const;
+  const domain = {
+    // USDG's EIP-712 domain; servers may override via `extra`.
+    name: requirement.extra?.name ?? 'Global Dollar',
+    version: requirement.extra?.version ?? '1',
+    chainId,
+    verifyingContract: requirement.asset,
+  };
+  const signature = opts.receive
+    ? await account.signTypedData({ domain, types: { ReceiveWithAuthorization: fields }, primaryType: 'ReceiveWithAuthorization', message: authorization })
+    : await account.signTypedData({ domain, types: { TransferWithAuthorization: fields }, primaryType: 'TransferWithAuthorization', message: authorization });
   return { authorization, signature };
 }
 

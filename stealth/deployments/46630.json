@@ -1,28 +1,57 @@
 {
   "network": "Robinhood Chain Testnet",
   "chainId": 46630,
-  "SodiStealthSettler": "0x271320B5dF6fc8Dc778304f53B1D7b01B0c2855E",
-  "deploymentBlock": 141471852,
-  "deploymentTx": "0xd63ee9b871d23f14e591861bdd634bf5b1d50ec69aad13e7eef4366cbc40169d",
-  "TestDollar3009": "0xb7226697f7dF4D260C72deA506C4f7e14c7761F1",
-  "TestDollar3009Tx": "0xa923b1eb4c39a2b06478d6cfb63011b8626fb0870700fcf08819613eb608e2e0",
+  "SodiStealthSettler": "0xb29990E4C28737ab9B0aFae0c308ae9D025AEB31",
+  "deploymentBlock": 141871721,
+  "deploymentTx": "0xe99006d0c8999754b8573b23377998f5d2a326a7cce8db9252e4015638da54f0",
+  "acceptedTokens": {
+    "USDG": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+    "TestDollar3009": "0x023eA2939e1744B158F01138f3F1dD6DcFcABf59"
+  },
+  "TestDollar3009": "0x023eA2939e1744B158F01138f3F1dD6DcFcABf59",
+  "TestDollar3009Tx": "0xe8b75523617f871c073013227dd758277f68c13dab9164194a35bf6f6c416bd9",
   "canonical": {
     "ERC5564Announcer": "0x55649E01B5Df198D18D95b5cc5051630cfD45564",
     "ERC6538Registry": "0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538"
   },
   "demo": {
-    "description": "Stealth x402 payments (sdk/demo/stealth-pay.ts) run live on 2026-10-23",
+    "description": "Stealth x402 payments (sdk/demo/stealth-pay.ts) run live on 2026-10-24 against the hardened settler",
     "merchant": "0x8151fE895E8F0C917Fc1C91581dC8AE5367e29fD",
-    "registerMetaAddress": "0x1ef8c34f233b0765b558d00dca5d63c7e7fcbcfe8c4875b280e95e9afbb25d5f",
     "payments": {
-      "0x4b469D3728271df66F0eC878b9CBCc8311d889aC": "0x566de20d7e028f5e27278b31425450f2f66ac81a83f5b0e576aef5453a252073",
-      "0x742E4A6a42D3dcc010ff316C8Bb4DB2EeFb89dB7": "0x9054ae63d5c1d2df17044e6760995e0836d77f7b7dd0d333ca762d27d8f619d4",
-      "0xe09Dc77CF6255c90cb5f8979bb6C5b6a32e7b5D1": "0x5ed1ac32a27b71ec4055e690c25b3a8f60585f77dadfff5f9baa5986585bf8b0"
+      "0xcedD040c3B048027036AB00126b381a07EFe566d": "0x054aa9d073ad8b55045f65e20ea6007d15ef9072a7abdfb2fcfc316d509614bf",
+      "0xCdb03f63dd1a7d8644888E0de7991978c563f304": "0x02629efcbfd240b27d2e0ee5946ade5f82963dab74de90800dc3c732de92dac3",
+      "0x84B5b3eA140fc00782ac55a1D960cf83900f51d0": "0x0a7764273c84231bfe4b7428555165911bcd04f45f8106e6628e40cfedad7760"
     },
     "sweeps": [
-      "0x7fc99cc654096458a0f4032eb4b9937c20dc36812efd7cafda5d6bcb7be37d2a",
-      "0xf9e816728cb4fe0867b48481058ade066736c432b99372e786c38a5a8cbb03e3",
-      "0xe0492e02a9da564391b95d94fcb19a47247d404835e0cf51ed8be3450f241cae"
-    ]
-  }
+      "0xdf73b17334dcf2617dd6f8b7820aef68a9a03c15cf93b19c90c125181f1b8999",
+      "0xea27dd9c88c5706c8e5ae5ff78994700f28d8c78b29ccc9dd0c58d85d69a14ae",
+      "0x8096d7fffe19e25d21ac184057756d9499ab18c20e1851fcf19a491a785f0df5"
+    ],
+    "usdgViaDemoAgent": {
+      "0x3a9dd1F88359b90E5F71Da8BF82106bA5BBE1199": "0xfa51a26892d54506f537aa3131ca0413991d0adeab98763a1bd5f989dd34a05f",
+      "0xCe6dB533e34a0133efbE63c3C7E1751058516820": "0x53cbaea51234180af6f9035a8ecbc0502f16aee5c270b13ad93d96e1b77f057f"
+    }
+  },
+  "superseded": [
+    {
+      "SodiStealthSettler": "0x271320B5dF6fc8Dc778304f53B1D7b01B0c2855E",
+      "TestDollar3009": "0xb7226697f7dF4D260C72deA506C4f7e14c7761F1",
+      "reason": "Security review 2026-10-24: announcement data was not bound to the payer's signature, and any token was accepted. Replaced by a settler that takes a ReceiveWithAuthorization with a committing nonce and a fixed token list.",
+      "demo": {
+        "description": "Stealth x402 payments (sdk/demo/stealth-pay.ts) run live on 2026-10-23",
+        "merchant": "0x8151fE895E8F0C917Fc1C91581dC8AE5367e29fD",
+        "registerMetaAddress": "0x1ef8c34f233b0765b558d00dca5d63c7e7fcbcfe8c4875b280e95e9afbb25d5f",
+        "payments": {
+          "0x4b469D3728271df66F0eC878b9CBCc8311d889aC": "0x566de20d7e028f5e27278b31425450f2f66ac81a83f5b0e576aef5453a252073",
+          "0x742E4A6a42D3dcc010ff316C8Bb4DB2EeFb89dB7": "0x9054ae63d5c1d2df17044e6760995e0836d77f7b7dd0d333ca762d27d8f619d4",
+          "0xe09Dc77CF6255c90cb5f8979bb6C5b6a32e7b5D1": "0x5ed1ac32a27b71ec4055e690c25b3a8f60585f77dadfff5f9baa5986585bf8b0"
+        },
+        "sweeps": [
+          "0x7fc99cc654096458a0f4032eb4b9937c20dc36812efd7cafda5d6bcb7be37d2a",
+          "0xf9e816728cb4fe0867b48481058ade066736c432b99372e786c38a5a8cbb03e3",
+          "0xe0492e02a9da564391b95d94fcb19a47247d404835e0cf51ed8be3450f241cae"
+        ]
+      }
+    }
+  ]
 }

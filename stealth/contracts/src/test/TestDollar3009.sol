@@ -12,6 +12,10 @@ contract TestDollar3009 is ERC20, EIP712 {
         "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
 
+    bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(
+        "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    );
+
     mapping(address => mapping(bytes32 => bool)) public authorizationState;
 
     event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce);
@@ -20,6 +24,7 @@ contract TestDollar3009 is ERC20, EIP712 {
     error AuthorizationExpired();
     error AuthorizationUsedAlready();
     error InvalidSignature();
+    error CallerMustBePayee();
 
     constructor() ERC20("Sodi Test Dollar", "tUSD") EIP712("Sodi Test Dollar", "1") {}
 
@@ -46,15 +51,46 @@ contract TestDollar3009 is ERC20, EIP712 {
         bytes32 r,
         bytes32 s
     ) external {
+        _authorize(TRANSFER_WITH_AUTHORIZATION_TYPEHASH, from, to, value, validAfter, validBefore, nonce, v, r, s);
+        _transfer(from, to, value);
+    }
+
+    /// @notice Like transferWithAuthorization, but only the payee can execute it (EIP-3009).
+    function receiveWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        if (to != msg.sender) revert CallerMustBePayee();
+        _authorize(RECEIVE_WITH_AUTHORIZATION_TYPEHASH, from, to, value, validAfter, validBefore, nonce, v, r, s);
+        _transfer(from, to, value);
+    }
+
+    function _authorize(
+        bytes32 typehash,
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal {
         if (block.timestamp <= validAfter) revert AuthorizationNotYetValid();
         if (block.timestamp >= validBefore) revert AuthorizationExpired();
         if (authorizationState[from][nonce]) revert AuthorizationUsedAlready();
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(abi.encode(TRANSFER_WITH_AUTHORIZATION_TYPEHASH, from, to, value, validAfter, validBefore, nonce))
-        );
+        bytes32 digest =
+            _hashTypedDataV4(keccak256(abi.encode(typehash, from, to, value, validAfter, validBefore, nonce)));
         if (ECDSA.recover(digest, v, r, s) != from) revert InvalidSignature();
         authorizationState[from][nonce] = true;
         emit AuthorizationUsed(from, nonce);
-        _transfer(from, to, value);
     }
 }

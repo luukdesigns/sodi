@@ -14,7 +14,7 @@ import {
 const postedEvent = parseAbiItem('event Posted(uint256 indexed channelId, address indexed author, bytes envelope)');
 
 import { sodiA2AAbi } from './abi.js';
-import { type KeyPair, keyDerivationMessage, keyPairFromSignature, open, seal } from './crypto.js';
+import { type KeyPair, isValidRecipientKey, keyDerivationMessage, keyPairFromSignature, open, seal } from './crypto.js';
 
 export interface Message<T = unknown> {
   /** Transaction hash and log index. */
@@ -195,7 +195,10 @@ export class A2AClient {
    * Returns the transaction hash.
    */
   async send<T>({ to, type, body, channelId = 0n, ref }: SendOptions<T>): Promise<Hex> {
-    const recipients = await Promise.all([...new Set([...to, this.address])].map((a) => this.keyOf(a)));
+    const addresses = [...new Set([...to, this.address])];
+    const recipients = await Promise.all(addresses.map((a) => this.keyOf(a)));
+    const invalid = addresses.filter((_, i) => !isValidRecipientKey(recipients[i]!));
+    if (invalid.length) throw new Error(`these agents registered keys that can't be encrypted to: ${invalid.join(', ')}; leave them out`);
     const plaintext = enc.encode(JSON.stringify({ v: 1, type, body, ref, t: Math.floor(Date.now() / 1000) }));
     const envelope = bytesToHex(
       seal(plaintext, recipients, {

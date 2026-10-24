@@ -7,6 +7,7 @@ import {
   StealthMerchant,
   StealthReceiver,
   type X402Payment,
+  canonicalSignature,
   checkStealthAddress,
   computeStealthKey,
   encodeMetaAddress,
@@ -17,6 +18,7 @@ import {
   offerStealth,
   parseMetaAddress,
   readStealthOffer,
+  stealthNonce,
   stealthRecipient,
   viewingOnly,
 } from '../../src/index.js';
@@ -110,48 +112,59 @@ describe('meta-addresses and keys', () => {
   });
 });
 
+const SETTLER = '0xb29990E4C28737ab9B0aFae0c308ae9D025AEB31' as const;
+
 describe('x402 extension', () => {
   const base = { scheme: 'exact', network: 'eip155:46630', asset: '0x7E955252E15c84f5768B83c41a71F9eba181802F', payTo: merchantWallet.address, amount: '10000', extra: { name: 'Global Dollar', version: '1' } };
 
   it('adds an offer without touching payTo or the existing extra fields', async () => {
     const meta = encodeMetaAddress(await keysOf(merchantWallet));
-    const r = offerStealth(base, meta);
+    const r = offerStealth(base, meta, SETTLER);
     expect(r.payTo).toBe(base.payTo);
-    expect(r.extra).toMatchObject({ name: 'Global Dollar', version: '1', stealth: { scheme: 'erc5564:1', metaAddress: meta } });
-    expect(readStealthOffer(r.extra)).toEqual({ scheme: 'erc5564:1', metaAddress: meta });
+    expect(r.extra).toMatchObject({ name: 'Global Dollar', version: '1', stealth: { scheme: 'erc5564:1', metaAddress: meta, settler: SETTLER } });
+    expect(readStealthOffer(r.extra)).toEqual({ scheme: 'erc5564:1', metaAddress: meta, settler: SETTLER });
   });
 
-  it('ignores missing or malformed offers', () => {
+  it('ignores missing or malformed offers, including ones without a settler', async () => {
+    const meta = encodeMetaAddress(await keysOf(merchantWallet));
     expect(readStealthOffer(base.extra)).toBeUndefined();
-    expect(readStealthOffer({ stealth: { scheme: 'erc5564:1', metaAddress: 'st:eth:0xdead' } })).toBeUndefined();
-    expect(readStealthOffer({ stealth: { scheme: 'other', metaAddress: 'x' } })).toBeUndefined();
+    expect(readStealthOffer({ stealth: { scheme: 'erc5564:1', metaAddress: 'st:eth:0xdead', settler: SETTLER } })).toBeUndefined();
+    expect(readStealthOffer({ stealth: { scheme: 'other', metaAddress: meta, settler: SETTLER } })).toBeUndefined();
+    expect(readStealthOffer({ stealth: { scheme: 'erc5564:1', metaAddress: meta } })).toBeUndefined();
+  });
+
+  it('pays the settler with a nonce that commits to the stealth address and announcement', async () => {
+    const meta = encodeMetaAddress(await keysOf(merchantWallet));
+    const r = stealthRecipient({ scheme: 'erc5564:1', metaAddress: meta, settler: SETTLER });
+    expect(r.to).toBe(SETTLER);
+    expect(r.nonce).toBe(stealthNonce(r.proof));
+    expect(stealthNonce({ ...r.proof, viewTag: '0x00' })).not.toBe(r.nonce);
   });
 });
 
 describe('verifying a stealth payment', async () => {
   const keys = await keysOf(merchantWallet);
-  const receiver = new StealthReceiver(viewingOnly(keys));
+  const receiver = new StealthReceiver(viewingOnly(keys), SETTLER);
   const asset = '0x7E955252E15c84f5768B83c41a71F9eba181802F' as const;
   const domain = { name: 'Global Dollar', version: '1' };
   const now = 1_800_000_000;
   const expected = { asset, amount: 10_000n, chainId: 46630, domain };
+  const fields = [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }] as const;
 
-  async function pay(opts: { metaAddress?: string; value?: bigint; validBefore?: bigint; signer?: typeof payer } = {}): Promise<X402Payment> {
-    const { to, proof } = stealthRecipient({ scheme: 'erc5564:1', metaAddress: opts.metaAddress ?? receiver.metaAddress });
-    const authorization = { from: payer.address, to, value: opts.value ?? 10_000n, validAfter: 0n, validBefore: opts.validBefore ?? BigInt(now + 300), nonce: toHex(crypto.getRandomValues(new Uint8Array(32))) };
-    const signature = await (opts.signer ?? payer).signTypedData({
-      domain: { ...domain, chainId: 46630, verifyingContract: asset },
-      types: { TransferWithAuthorization: [{ name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }] },
-      primaryType: 'TransferWithAuthorization',
-      message: authorization,
-    });
+  async function pay(opts: { metaAddress?: string; value?: bigint; validBefore?: bigint; signer?: typeof payer; to?: `0x${string}`; nonce?: `0x${string}`; transferType?: boolean } = {}): Promise<X402Payment> {
+    const r = stealthRecipient({ scheme: 'erc5564:1', metaAddress: opts.metaAddress ?? receiver.metaAddress, settler: SETTLER });
+    const authorization = { from: payer.address, to: opts.to ?? r.to, value: opts.value ?? 10_000n, validAfter: 0n, validBefore: opts.validBefore ?? BigInt(now + 300), nonce: opts.nonce ?? r.nonce };
+    const d = { ...domain, chainId: 46630, verifyingContract: asset };
+    const signature = opts.transferType
+      ? await (opts.signer ?? payer).signTypedData({ domain: d, types: { TransferWithAuthorization: fields }, primaryType: 'TransferWithAuthorization', message: authorization })
+      : await (opts.signer ?? payer).signTypedData({ domain: d, types: { ReceiveWithAuthorization: fields }, primaryType: 'ReceiveWithAuthorization', message: authorization });
     const s = (x: bigint) => x.toString();
     return {
       x402Version: 2,
       payload: {
         signature,
         authorization: { ...authorization, value: s(authorization.value), validAfter: s(authorization.validAfter), validBefore: s(authorization.validBefore) },
-        stealth: proof,
+        stealth: r.proof,
       },
     };
   }
@@ -159,19 +172,25 @@ describe('verifying a stealth payment', async () => {
   it('accepts a valid payment to one of our stealth addresses', async () => {
     const p = await pay();
     const v = await receiver.verify(p, expected, now);
-    expect(v.stealthAddress).toBe(p.payload.authorization.to);
+    expect(v.stealthAddress).toBe(p.payload.stealth!.stealthAddress);
     expect(v.from).toBe(payer.address);
   });
 
   it('lets the full merchant spend what the watch-only receiver accepted', async () => {
     const p = await pay();
-    const key = new StealthMerchant(keys).keyFor(p.payload.stealth!.ephemeralPublicKey);
-    expect(privateKeyToAccount(key).address).toBe(p.payload.authorization.to);
+    const key = new StealthMerchant(keys, SETTLER).keyFor(p.payload.stealth!.ephemeralPublicKey);
+    expect(privateKeyToAccount(key).address).toBe(p.payload.stealth!.stealthAddress);
   });
 
   it("rejects payments to another merchant's stealth address", async () => {
     const other = encodeMetaAddress(await keysOf(otherWallet));
     await expect(receiver.verify(await pay({ metaAddress: other }), expected, now)).rejects.toThrow(/not one of our stealth addresses/);
+  });
+
+  it('rejects payments that bypass the settler or whose nonce does not commit to the stealth address', async () => {
+    await expect(receiver.verify(await pay({ to: payer.address }), expected, now)).rejects.toThrow(/settler/);
+    await expect(receiver.verify(await pay({ nonce: `0x${'11'.repeat(32)}` }), expected, now)).rejects.toThrow(/nonce/);
+    await expect(receiver.verify(await pay({ transferType: true }), expected, now)).rejects.toThrow(/signature/);
   });
 
   it('rejects underpayment, expiry, a forged signature and a missing proof', async () => {
@@ -181,5 +200,20 @@ describe('verifying a stealth payment', async () => {
     const p = await pay();
     delete p.payload.stealth;
     await expect(receiver.verify(p, expected, now)).rejects.toThrow(/not a stealth payment/);
+  });
+});
+
+describe('key derivation hardening', () => {
+  it('derives the same keys whatever signature encoding the wallet uses', async () => {
+    const sig = await merchantWallet.signMessage({ message: keyDerivationMessage(merchantWallet.address) });
+    const b = hexToBytes(sig);
+    const v01 = b.slice();
+    v01[64] = b[64]! - 27;
+    expect(keysFromSignature(toHex(v01))).toEqual(keysFromSignature(sig));
+    expect(canonicalSignature(toHex(v01))).toBe(sig);
+  });
+
+  it('uses the checksummed address, so the meta-address does not depend on how the address is written', () => {
+    expect(keyDerivationMessage(merchantWallet.address.toLowerCase() as `0x${string}`)).toBe(keyDerivationMessage(merchantWallet.address));
   });
 });

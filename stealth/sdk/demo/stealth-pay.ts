@@ -62,7 +62,7 @@ const merchantAddress = merchantWallet.account.address;
 
 console.log('1. The merchant derives stealth keys from its wallet and publishes its meta-address (ERC-6538)');
 const keys = await deriveStealthKeys(merchantWallet);
-const merchant = new StealthMerchant(keys);
+const merchant = new StealthMerchant(keys, SETTLER);
 if ((await lookupMetaAddress(publicClient, merchantAddress)) !== merchant.metaAddress) {
   console.log(`   registered in ${await registerMetaAddress(merchantWallet, publicClient, merchant.metaAddress)}`);
 }
@@ -74,8 +74,7 @@ const shop = startStealthMerchant({
   port: 18480,
   asset: TOKEN,
   payTo: merchantAddress,
-  receiver: new StealthReceiver(viewingOnly(keys)),
-  settler: SETTLER,
+  receiver: new StealthReceiver(viewingOnly(keys), SETTLER),
   facilitator,
   publicClient,
   price: PRICE,
@@ -92,18 +91,18 @@ for (let i = 1; i <= 3; i++) {
   const first = await fetch('http://127.0.0.1:18480/stealth');
   const required = await parsePaymentRequired(first);
   const requirement = selectRequirement(required, chainId, TOKEN, PRICE);
-  const { to, proof } = stealthRecipient(readStealthOffer(requirement.extra)!);
-  const signed = await signAuthorization(session, requirement, chainId, undefined, to);
+  const { to, nonce, proof } = stealthRecipient(readStealthOffer(requirement.extra)!);
+  const signed = await signAuthorization(session, requirement, chainId, undefined, to, { nonce, receive: true });
   const [name, value] = paymentHeader(required.version, requirement, signed, proof);
   const res = await fetch('http://127.0.0.1:18480/stealth', { headers: { [name]: value } });
   if (res.status !== 200) throw new Error(await res.text());
-  console.log(`   payment ${i}: ${usd(PRICE)} to ${to}  (${shop.settled.at(-1)!.txHash})`);
+  console.log(`   payment ${i}: ${usd(PRICE)} to ${proof.stealthAddress}  (${shop.settled.at(-1)!.txHash})`);
 }
 shop.server.close();
 console.log(`   merchant's public address received: ${usd(await bal(merchantAddress))}`);
 
 console.log('4. The merchant finds its payments from the chain alone');
-const found = await merchant.scan(publicClient, { fromBlock: startBlock, caller: SETTLER });
+const found = await merchant.scan(publicClient, { fromBlock: startBlock, tokens: [TOKEN] });
 for (const f of found) console.log(`   ${f.stealthAddress}  ${usd(f.amount ?? 0n)}  block ${f.blockNumber}`);
 
 console.log('5. And sweeps them; the stealth addresses never need gas');

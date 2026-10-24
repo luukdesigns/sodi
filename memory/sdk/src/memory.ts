@@ -63,8 +63,14 @@ export interface MemoryConfig {
   blobs?: BlobStore;
   /** Envelopes up to this size are stored on-chain; larger ones go to `blobs`. Default 4096. */
   inlineLimit?: number;
-  /** Current key epoch (default 1). Older epochs are still tried when reading. */
+  /**
+   * Current key epoch. Leave unset to find it from the chain: init() uses the epoch of this agent's
+   * latest write, so a restarted agent never falls back to a retired key. Older epochs are still
+   * tried when reading.
+   */
   epoch?: number;
+  /** Highest epoch init() will probe for when finding the current one. Default 16. */
+  maxEpoch?: number;
 }
 
 export interface Slot {
@@ -98,10 +104,15 @@ export class AgentMemory {
   private keys = new Map<number, KeyPair>();
   private salt?: Uint8Array;
   private chainId?: number;
-  readonly epoch: number;
+  private currentEpoch: number;
 
   constructor(private readonly c: MemoryConfig) {
-    this.epoch = c.epoch ?? 1;
+    this.currentEpoch = c.epoch ?? 1;
+  }
+
+  /** The key epoch new writes use. */
+  get epoch(): number {
+    return this.currentEpoch;
   }
 
   get address(): Address {
@@ -111,8 +122,29 @@ export class AgentMemory {
   /** Derives the namespace salt and the current epoch key from wallet signatures. */
   async init(): Promise<void> {
     this.salt = await deriveNamespaceSalt(this.c.wallet);
-    this.keys.set(this.epoch, await deriveMemoryKey(this.c.wallet, this.epoch));
     this.chainId = await this.c.publicClient.getChainId();
+    if (this.c.epoch === undefined) this.currentEpoch = await this.discoverEpoch();
+    if (!this.keys.has(this.epoch)) this.keys.set(this.epoch, await deriveMemoryKey(this.c.wallet, this.epoch));
+  }
+
+  /** The epoch of this agent's latest write: the one it was using when it last ran. */
+  private async discoverEpoch(): Promise<number> {
+    const logs = await this.c.publicClient.getLogs({
+      address: this.c.contract,
+      event: memoryCommittedEvent,
+      args: { agent: this.address },
+      fromBlock: this.c.fromBlock,
+    });
+    const latest = logs.at(-1);
+    if (!latest) return 1;
+    const envelope = await this.fetchEnvelope(latest.args.envelope!, latest.args.location!).catch(() => undefined);
+    if (!envelope) return 1;
+    const ctx = this.context(latest.args.namespace!, this.address);
+    for (let e = 1; e <= (this.c.maxEpoch ?? 16); e++) {
+      if (!this.keys.has(e)) this.keys.set(e, await deriveMemoryKey(this.c.wallet, e));
+      if (open(envelope, this.keys.get(e)!, ctx)) return e;
+    }
+    throw new Error('could not find the key epoch of this agent\'s latest write; pass `epoch` explicitly');
   }
 
   /** This agent's memory public key for the current epoch (to share with teammates, if wanted). */
@@ -156,7 +188,13 @@ export class AgentMemory {
     opts: { expectedVersion?: bigint; shareWith?: Hex[] } = {},
   ): Promise<{ version: bigint; tx: Hex; inline: boolean }> {
     const id = this.slotId(slot);
-    const expected = opts.expectedVersion ?? (await this.head({ id })).version;
+    const head = await this.head({ id });
+    const expected = opts.expectedVersion ?? head.version;
+    // Never write over a version this copy can't read: it was written under a newer key epoch, and
+    // writing now would put the new value under a key that may have been retired.
+    if (head.version > 0n && (await this.get({ id }).catch(() => undefined)) === undefined) {
+      throw new Error('the latest version of this slot was written under a newer key epoch; restart with that epoch (or let init() find it)');
+    }
     const plaintext = enc.encode(JSON.stringify({ v: 1, epoch: this.epoch, t: Math.floor(Date.now() / 1000), value }));
     const envelope = seal(plaintext, [this.publicKey, ...(opts.shareWith ?? [])], this.context(id, this.address));
     const contentHash = keccak256(envelope);

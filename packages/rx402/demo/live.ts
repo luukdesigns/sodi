@@ -90,8 +90,7 @@ const stealthShop = startStealthMerchant({
   port: 18505,
   asset: USDG,
   payTo: MERCHANT,
-  receiver: new StealthReceiver(viewingOnly(stealthKeys)),
-  settler: SETTLER,
+  receiver: new StealthReceiver(viewingOnly(stealthKeys), SETTLER),
   facilitator,
   publicClient,
   price: PRICE,
@@ -146,7 +145,7 @@ try {
 
   console.log('\n4. What the merchant sees');
   console.log(`   public address ${MERCHANT} received ${usd(await bal(MERCHANT))} (ordinary API only)`);
-  const found = await new StealthMerchant(stealthKeys).scan(publicClient, { fromBlock: startBlock, caller: SETTLER });
+  const found = await new StealthMerchant(stealthKeys, SETTLER).scan(publicClient, { fromBlock: startBlock });
   console.log(`   stealth payments found from announcements: ${found.length}, ${found.map((f) => `${usd(f.amount ?? 0n)} at ${f.stealthAddress.slice(0, 10)}…`).join(', ')}`);
   console.log(`   pool balance left for the agent: ${usd(client.poolBalance())}`);
 } catch (err) {

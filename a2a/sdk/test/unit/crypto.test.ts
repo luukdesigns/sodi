@@ -1,9 +1,13 @@
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
 
 import {
   type Context,
+  associatedData,
+  canonicalSignature,
+  isValidRecipientKey,
   keyDerivationMessage,
   keyPairFromSignature,
   open,
@@ -96,7 +100,7 @@ describe('envelopes', () => {
 
   it('round-trips padding', () => {
     expect(unpad(pad(msg))).toEqual(msg);
-    expect(() => pad(new Uint8Array(20_000))).toThrow(/too large/);
+    expect(() => pad(new Uint8Array(2_000_000))).toThrow(/too large/);
   });
 });
 
@@ -120,5 +124,55 @@ describe('content keys (used for disclosure)', () => {
     const env = seal(msg, [b.publicKey], ctx);
     const k = unwrapContentKey(env, b, ctx)!;
     expect(openWithContentKey(env, k, { ...ctx, author: eve.address })).toBeNull();
+  });
+});
+
+describe('commitment and padding (review fixes)', () => {
+  /** Re-encrypts an envelope's body under its own content key after `edit`, as a malicious author could. */
+  async function tampered(edit: (body: Uint8Array) => void) {
+    const b = await keysOf(bob);
+    const env = seal(msg, [b.publicKey], ctx);
+    const k = unwrapContentKey(env, b, ctx)!;
+    const slotsEnd = 36 + 48;
+    const nonce = env.slice(slotsEnd, slotsEnd + 24);
+    const padded = xchacha20poly1305(k, nonce, associatedData(ctx)).decrypt(env.slice(slotsEnd + 24));
+    edit(padded);
+    const ct = xchacha20poly1305(k, nonce, associatedData(ctx)).encrypt(padded);
+    const out = new Uint8Array(slotsEnd + 24 + ct.length);
+    out.set(env.slice(0, slotsEnd + 24));
+    out.set(ct, slotsEnd + 24);
+    return { out, k };
+  }
+
+  it('rejects a body whose key commitment does not match its key', async () => {
+    const { out, k } = await tampered((p) => p.fill(0, 4, 36));
+    expect(openWithContentKey(out, k, ctx)).toBeNull();
+  });
+
+  it('rejects non-zero padding, which would give a forger free bytes', async () => {
+    const { out, k } = await tampered((p) => (p[p.length - 1] = 7));
+    expect(openWithContentKey(out, k, ctx)).toBeNull();
+  });
+
+  it('derives the same key whatever encoding the wallet uses for the signature', async () => {
+    const sig = await bob.signMessage({ message: keyDerivationMessage(bob.address) });
+    const b = hexToBytes(sig);
+    const v01 = b.slice();
+    v01[64] = b[64]! - 27;
+    const n = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    const highS = b.slice();
+    highS.set(hexToBytes(`0x${(n - BigInt(bytesToHex(b.slice(32, 64)))).toString(16).padStart(64, '0')}`), 32);
+    highS[64] = b[64] === 27 ? 28 : 27;
+    for (const variant of [v01, highS]) {
+      expect(canonicalSignature(bytesToHex(variant))).toBe(sig);
+      expect(keyPairFromSignature(bytesToHex(variant)).publicKey).toBe(keyPairFromSignature(sig).publicKey);
+    }
+  });
+
+  it('refuses low-order recipient keys with a clear error', async () => {
+    const zeroish = `0x01${'00'.repeat(31)}` as const;
+    expect(isValidRecipientKey(zeroish)).toBe(false);
+    expect(isValidRecipientKey((await keysOf(bob)).publicKey)).toBe(true);
+    expect(() => seal(msg, [zeroish], ctx)).toThrow(/not a valid X25519 public key/);
   });
 });

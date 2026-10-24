@@ -27,7 +27,6 @@ export function startStealthMerchant(opts: {
   asset: Address;
   payTo: Address;
   receiver: StealthReceiver;
-  settler: Address;
   facilitator: WalletClient;
   publicClient: PublicClient;
   price: bigint;
@@ -63,7 +62,7 @@ export function startStealthMerchant(opts: {
       let txHash: Hex;
       if (payment.payload.stealth) {
         const verified = await opts.receiver.verify(payment, { asset: opts.asset, amount: opts.price, chainId: opts.chainId, domain });
-        txHash = await opts.receiver.settle(opts.facilitator, opts.publicClient, opts.settler, verified);
+        txHash = await opts.receiver.settle(opts.facilitator, opts.publicClient, verified);
       } else {
         if (a.to.toLowerCase() !== opts.payTo.toLowerCase() || BigInt(a.value) < opts.price) throw new Error('bad payment');
         const { v, r, s } = parseSignature(payment.payload.signature);
@@ -77,7 +76,7 @@ export function startStealthMerchant(opts: {
         });
         await opts.publicClient.waitForTransactionReceipt({ hash: txHash });
       }
-      settled.push({ path, to: a.to, value: BigInt(a.value), stealth: Boolean(payment.payload.stealth), txHash });
+      settled.push({ path, to: payment.payload.stealth?.stealthAddress ?? a.to, value: BigInt(a.value), stealth: Boolean(payment.payload.stealth), txHash });
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: `paid content for ${path}` }));
     } catch (err) {
       res.writeHead(402, { 'content-type': 'application/json' }).end(JSON.stringify({ error: String(err) }));

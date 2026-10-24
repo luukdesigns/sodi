@@ -90,8 +90,7 @@ startApis({
   domain: { name: 'Global Dollar', version: '1' },
   price: 1_000n, // 0.001 USDG
   payTo: merchant.account.address,
-  receiver: new StealthReceiver(viewingOnly(await deriveStealthKeys(merchant))),
-  settler: need('SETTLER') as Address,
+  receiver: new StealthReceiver(viewingOnly(await deriveStealthKeys(merchant)), need('SETTLER') as Address),
   facilitator: wallet(need('FACILITATOR_PRIVATE_KEY')),
   publicClient,
 });

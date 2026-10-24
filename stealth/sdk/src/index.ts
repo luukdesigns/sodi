@@ -12,6 +12,7 @@ export {
 export {
   type StealthKeys,
   type ViewingKeys,
+  canonicalSignature,
   deriveStealthKeys,
   keyDerivationMessage,
   keysFromSignature,
@@ -32,6 +33,7 @@ export {
   type StealthProof,
   offerStealth,
   readStealthOffer,
+  stealthNonce,
   stealthRecipient,
 } from './x402.js';
 export {

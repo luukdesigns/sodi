@@ -116,7 +116,7 @@ export async function runDemo(opts: {
   log('5. Vera reads the report and approves it, with a confidential review');
   const forVera = await vera.jobs.readDeliverable(jobId, startBlock);
   if (!forVera) throw new Error('evaluator could not open the deliverable');
-  await vera.jobs.complete(jobId, { verdict: 'Findings reproduced; H-1 is real. Approved.' });
+  await vera.jobs.complete(jobId, { verdict: 'Findings reproduced; H-1 is real. Approved.' }, { fromBlock: startBlock });
 
   log('6. Who can read what');
   const views: Record<string, { report: boolean; review: boolean }> = {};

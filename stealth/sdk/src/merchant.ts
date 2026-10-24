@@ -22,9 +22,10 @@ import { privateKeyToAccount } from 'viem/accounts';
 import type { StealthKeys, ViewingKeys } from './keys.js';
 import { ERC5564_ANNOUNCER, announcerAbi } from './registry.js';
 import { SCHEME_ID, checkStealthAddress, computeStealthKey, encodeMetaAddress } from './stealth.js';
-import { type StealthProof, offerStealth } from './x402.js';
+import { type StealthProof, offerStealth, stealthNonce } from './x402.js';
 
-const TRANSFER_WITH_AUTHORIZATION: Hex = '0xe3ee160e';
+/** Selectors a settler records in the metadata: the current one, and the first version's. */
+const SETTLED_BY: Hex[] = ['0xef55bec6' /* receiveWithAuthorization */, '0xe3ee160e' /* transferWithAuthorization */];
 
 const settlerAbi = parseAbi([
   'struct Payment { address token; address from; address stealthAddress; uint256 value; uint256 validAfter; uint256 validBefore; bytes32 nonce; uint8 v; bytes32 r; bytes32 s; }',
@@ -34,6 +35,16 @@ const eip3009Abi = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
   'function balanceOf(address) view returns (uint256)',
 ]);
+
+const fields = [
+  { name: 'from', type: 'address' },
+  { name: 'to', type: 'address' },
+  { name: 'value', type: 'uint256' },
+  { name: 'validAfter', type: 'uint256' },
+  { name: 'validBefore', type: 'uint256' },
+  { name: 'nonce', type: 'bytes32' },
+] as const;
+const receiveTypes = { ReceiveWithAuthorization: fields } as const;
 
 const authorizationTypes = {
   TransferWithAuthorization: [
@@ -90,7 +101,14 @@ export interface FoundPayment {
 }
 
 export class StealthReceiver {
-  constructor(protected readonly keys: ViewingKeys) {}
+  /**
+   * @param keys the viewing half of the merchant's stealth keys
+   * @param settler the SodiStealthSettler this merchant's payments are settled through
+   */
+  constructor(
+    protected readonly keys: ViewingKeys,
+    readonly settler: Address,
+  ) {}
 
   get metaAddress(): string {
     return encodeMetaAddress(this.keys);
@@ -98,11 +116,11 @@ export class StealthReceiver {
 
   /** Adds this merchant's stealth offer to an x402 payment requirement. */
   offer<T extends { extra?: Record<string, unknown> }>(requirement: T): T {
-    return offerStealth(requirement, this.metaAddress);
+    return offerStealth(requirement, this.metaAddress, this.settler);
   }
 
   /** Is this one-time address ours? */
-  owns(stealthAddress: Address, proof: StealthProof): boolean {
+  owns(stealthAddress: Address, proof: Pick<StealthProof, 'ephemeralPublicKey' | 'viewTag'>): boolean {
     return checkStealthAddress({
       stealthAddress,
       ephemeralPublicKey: proof.ephemeralPublicKey,
@@ -113,8 +131,9 @@ export class StealthReceiver {
   }
 
   /**
-   * Checks a stealth payment the way a facilitator checks an ordinary one, except that the recipient
-   * must be one of our stealth addresses rather than `payTo`. Throws with the reason if it isn't valid.
+   * Checks a stealth payment the way a facilitator checks an ordinary one, except that it pays the
+   * settler, with a nonce committing to one of our stealth addresses and its announcement data,
+   * rather than `payTo`. Throws with the reason if it isn't valid.
    */
   async verify(
     payment: X402Payment,
@@ -122,8 +141,10 @@ export class StealthReceiver {
     nowSeconds = Math.floor(Date.now() / 1000),
   ): Promise<VerifiedStealthPayment> {
     const { signature, authorization: a, stealth } = payment.payload;
-    if (!stealth) throw new Error('not a stealth payment');
-    if (!this.owns(a.to, stealth)) throw new Error('recipient is not one of our stealth addresses');
+    if (!stealth?.stealthAddress) throw new Error('not a stealth payment');
+    if (a.to.toLowerCase() !== this.settler.toLowerCase()) throw new Error('payment does not go through our settler');
+    if (a.nonce.toLowerCase() !== stealthNonce(stealth).toLowerCase()) throw new Error('nonce does not commit to the stealth address');
+    if (!this.owns(stealth.stealthAddress, stealth)) throw new Error('recipient is not one of our stealth addresses');
     const value = BigInt(a.value);
     const validAfter = BigInt(a.validAfter);
     const validBefore = BigInt(a.validBefore);
@@ -132,8 +153,8 @@ export class StealthReceiver {
     if (validBefore <= BigInt(nowSeconds + 5)) throw new Error('authorization expires too soon');
     const signer = await recoverTypedDataAddress({
       domain: { ...expected.domain, chainId: expected.chainId, verifyingContract: expected.asset },
-      types: authorizationTypes,
-      primaryType: 'TransferWithAuthorization',
+      types: receiveTypes,
+      primaryType: 'ReceiveWithAuthorization',
       message: { from: a.from, to: a.to, value, validAfter, validBefore, nonce: a.nonce },
       signature,
     });
@@ -141,7 +162,7 @@ export class StealthReceiver {
     return {
       token: expected.asset,
       from: a.from,
-      stealthAddress: a.to,
+      stealthAddress: stealth.stealthAddress,
       value,
       validAfter,
       validBefore,
@@ -157,10 +178,10 @@ export class StealthReceiver {
    * Whoever pays the gas is visible on-chain, so use a facilitator shared with other merchants;
    * settling every payment from the merchant's own wallet would link its stealth addresses.
    */
-  async settle(wallet: WalletClient, publicClient: PublicClient, settler: Address, p: VerifiedStealthPayment): Promise<Hex> {
+  async settle(wallet: WalletClient, publicClient: PublicClient, p: VerifiedStealthPayment): Promise<Hex> {
     const { v, r, s, yParity } = parseSignature(p.signature);
     const hash = await wallet.writeContract({
-      address: settler,
+      address: this.settler,
       abi: settlerAbi,
       functionName: 'settle',
       args: [
@@ -189,11 +210,12 @@ export class StealthReceiver {
 
   /**
    * Finds our payments from ERC-5564 announcements alone, so nothing needs to be stored off-chain.
-   * Pass `caller` (the settler) to look only at Sodi settlements.
+   * Looks at announcements from our settler unless `caller` says otherwise; pass `tokens` to keep
+   * only payments in tokens you accept.
    */
   async scan(
     publicClient: PublicClient,
-    opts: { fromBlock: bigint; toBlock?: bigint; caller?: Address; announcer?: Address; chunkSize?: bigint },
+    opts: { fromBlock: bigint; toBlock?: bigint; caller?: Address | null; announcer?: Address; chunkSize?: bigint; tokens?: Address[] },
   ): Promise<FoundPayment[]> {
     // cacheTime 0: viem otherwise reuses a block number up to a few seconds old and misses fresh payments.
     const to = opts.toBlock ?? (await publicClient.getBlockNumber({ cacheTime: 0 }));
@@ -204,7 +226,7 @@ export class StealthReceiver {
       const logs = await publicClient.getLogs({
         address: opts.announcer ?? ERC5564_ANNOUNCER,
         event: announcerAbi[0],
-        args: { schemeId: SCHEME_ID, ...(opts.caller ? { caller: opts.caller } : {}) },
+        args: { schemeId: SCHEME_ID, ...(opts.caller === null ? {} : { caller: opts.caller ?? this.settler }) },
         fromBlock: from,
         toBlock: end,
       });
@@ -213,11 +235,13 @@ export class StealthReceiver {
         if (!stealthAddress || !ephemeralPubKey || !metadata || size(metadata) < 1) continue;
         const viewTag = slice(metadata, 0, 1);
         if (!this.owns(stealthAddress, { ephemeralPublicKey: ephemeralPubKey, viewTag })) continue;
-        const isTransfer = size(metadata) >= 57 && slice(metadata, 1, 5) === TRANSFER_WITH_AUTHORIZATION;
+        const isTransfer = size(metadata) >= 57 && SETTLED_BY.includes(slice(metadata, 1, 5));
+        const token = isTransfer ? slice(metadata, 5, 25) : undefined;
+        if (opts.tokens && !opts.tokens.some((t) => t.toLowerCase() === token?.toLowerCase())) continue;
         found.push({
           stealthAddress,
           ephemeralPublicKey: ephemeralPubKey,
-          token: isTransfer ? slice(metadata, 5, 25) : undefined,
+          token,
           amount: isTransfer ? hexToBigInt(slice(metadata, 25, 57)) : undefined,
           txHash: log.transactionHash!,
           blockNumber: log.blockNumber!,
@@ -229,8 +253,11 @@ export class StealthReceiver {
 }
 
 export class StealthMerchant extends StealthReceiver {
-  constructor(private readonly fullKeys: StealthKeys) {
-    super(fullKeys);
+  constructor(
+    private readonly fullKeys: StealthKeys,
+    settler: Address,
+  ) {
+    super(fullKeys, settler);
   }
 
   /** The private key of one stealth address. */

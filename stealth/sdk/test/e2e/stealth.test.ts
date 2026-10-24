@@ -115,21 +115,20 @@ describe('stealth x402 payments on a testnet fork', () => {
     const deployTx = await wallet(facilitatorAcct).deployContract({
       abi: settlerArtifact.abi,
       bytecode: settlerArtifact.bytecode.object,
-      args: [ERC5564_ANNOUNCER],
+      args: [ERC5564_ANNOUNCER, [USDG]],
     });
     settler = (await publicClient.waitForTransactionReceipt({ hash: deployTx })).contractAddress!;
     startBlock = await publicClient.getBlockNumber();
 
     // The merchant derives its keys from its wallet; its server only ever gets the viewing half.
     const keys = await deriveStealthKeys(wallet(merchantAcct));
-    merchant = new StealthMerchant(keys);
+    merchant = new StealthMerchant(keys, settler);
     aspServer = startServer(18412, () => aspState, join(aspDir, 'sets'));
     shop = startStealthMerchant({
       port: 18413,
       asset: USDG,
       payTo: merchantAcct.address,
-      receiver: new StealthReceiver(viewingOnly(keys)),
-      settler,
+      receiver: new StealthReceiver(viewingOnly(keys), settler),
       facilitator: wallet(facilitatorAcct),
       publicClient,
       price: PRICE,
@@ -194,14 +193,14 @@ describe('stealth x402 payments on a testnet fork', () => {
   }, 600_000);
 
   it('finds exactly its stealth payments from on-chain announcements', async () => {
-    found.push(...(await merchant.scan(publicClient, { fromBlock: startBlock, caller: settler })));
+    found.push(...(await merchant.scan(publicClient, { fromBlock: startBlock, tokens: [USDG] })));
     expect(found).toHaveLength(3);
     for (const f of found) {
       expect(f.token?.toLowerCase()).toBe(USDG.toLowerCase());
       expect(f.amount).toBe(PRICE);
     }
-    const stranger = new StealthReceiver(viewingOnly(await deriveStealthKeys(wallet(fresh()))));
-    expect(await stranger.scan(publicClient, { fromBlock: startBlock, caller: settler })).toHaveLength(0);
+    const stranger = new StealthReceiver(viewingOnly(await deriveStealthKeys(wallet(fresh()))), settler);
+    expect(await stranger.scan(publicClient, { fromBlock: startBlock })).toHaveLength(0);
   }, 120_000);
 
   it('sweeps the stealth addresses without them ever holding gas', async () => {

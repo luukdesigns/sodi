@@ -72,6 +72,10 @@ await memory.set('trades', value, { shareWith: await standing.readersFor(scope) 
 await standing.revoke(auditor, scope);
 ```
 
+## What the auditor trusts
+
+The auditor only accepts items from the Sodi contracts it knows: the deployments for each chain are built in (`SODI_DEPLOYMENTS`), or pass your own list. Otherwise an owner could point it at a contract of their own that emits whatever "messages" they like, attributed to anyone. Grants come over A2A, where anyone can write, so malformed ones are skipped and a grant only counts if its on-chain sender is the owner it names.
+
 ## Disclosure cannot be undone
 
 - **Revoking stops future access only.** Anything the auditor has already been able to read, they can keep. A standing grant covers every version written while it was active.
@@ -87,6 +91,9 @@ await standing.revoke(auditor, scope);
 - a key reused on an item outside the grant fails;
 - a forged grant from another account is ignored;
 - a pool disclosure with someone else's secrets is rejected;
-- standing access covers only versions written while granted.
+- standing access covers only versions written while granted;
+- items from contracts the auditor doesn't trust, and pools it doesn't know, are refused;
+- a pool disclosure that leaves out a later withdrawal is rejected as incomplete;
+- malformed grants and spoofed notices from strangers are ignored.
 
-The A2A crypto suite adds tests that a content key opens exactly one envelope, can't be recovered by non-recipients, and respects the envelope's context.
+The A2A crypto suite adds tests that a content key opens exactly one envelope, can't be recovered by non-recipients, respects the envelope's context, and can't be paired with a forged body (envelopes commit to their key).

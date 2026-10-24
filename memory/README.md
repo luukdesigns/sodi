@@ -60,6 +60,7 @@ await memory.update('portfolio', (p) => ({ ...p, cash: 120 }));   // retries on 
 Everything written to a chain stays there forever, encrypted or not. If a memory key ever leaks, every version written under it can be decrypted, and nothing can be deleted.
 
 - **Rotation protects the future, not the past.** Old versions stay readable to whoever holds the old key.
+- **A restarted agent finds its current epoch** from its latest write, and refuses to write over a version it can't read, so it never falls back to a retired key.
 - **Prefer a blob store for anything sensitive.** On-chain then holds only a hash, and you can delete the blob itself.
 - **Don't store long-lived secrets** (API keys, seed phrases) in memory at all.
 
@@ -69,14 +70,15 @@ Everything written to a chain stays there forever, encrypted or not. If a memory
 | --- | --- |
 | Contents | The agent's address, and when it writes |
 | Slot names | Per-slot version numbers and write frequency |
-| Who else can read a shared write | Approximate size (padded to buckets), or the blob location |
+| Who else can read a shared write | How many readers a write has (the envelope carries one 48-byte slot per reader), so a new standing grant shows as one more slot |
+| | Approximate size (padded to buckets), or the blob location |
 
 ## Layout and tests
 
 ```
 memory/
 ├── contracts/   SodiMemory.sol, 10 Foundry tests
-├── sdk/         @sodi/memory, 7 unit tests, demo, fork test
+├── sdk/         @sodi/memory, 9 unit tests, demo, fork test
 └── deployments/
 ```
 

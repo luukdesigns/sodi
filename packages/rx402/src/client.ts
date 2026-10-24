@@ -448,7 +448,9 @@ export class Rx402Client {
     const account = privateKeyToAccount(session.privateKey);
     const offer = this.config.stealth === false ? undefined : readStealthOffer(requirement.extra);
     const stealth = offer ? stealthRecipient(offer) : undefined;
-    const signed = await signAuthorization(account, requirement, chainId, this.now(), stealth?.to);
+    const signed = await signAuthorization(account, requirement, chainId, this.now(), stealth?.to, stealth ? { nonce: stealth.nonce, receive: true } : {});
+    // Who is being paid: the merchant, or its one-time stealth address (the settler only passes it on).
+    const payee = stealth ? stealth.proof.stealthAddress : signed.authorization.to;
     const [name, value] = paymentHeader(required.version, requirement, signed, stealth?.proof);
 
     // Record the payment before handing the signature over: from here on it can be settled.
@@ -460,7 +462,7 @@ export class Rx402Client {
       at: this.now(),
       resource: `${url.origin}${url.pathname}`,
       amount: requirement.amount.toString(),
-      payTo: signed.authorization.to,
+      payTo: payee,
       stealth: Boolean(stealth),
       session: account.address,
       status: 'pending',
@@ -470,7 +472,7 @@ export class Rx402Client {
 
     const headers = new Headers(init.headers);
     headers.set(name, value);
-    const payment = { amount: requirement.amount, payTo: signed.authorization.to, from: account.address, stealth: Boolean(stealth) };
+    const payment = { amount: requirement.amount, payTo: payee, from: account.address, stealth: Boolean(stealth) };
     let response: Response;
     try {
       // No redirects once a signed payment is attached: it must only ever go to the server that asked.

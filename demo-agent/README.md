@@ -26,7 +26,7 @@ Fund the agent's pool first: deposit USDG with `Rx402Client.deposit` using the s
 ```sh
 RX402_MNEMONIC="…" RX402_STORE=~/.sodi/demo-store.json RX402_CONTROLS=~/.sodi/demo-controls.json \
 POSTMAN_PRIVATE_KEY=0x… RELAYER_PRIVATE_KEY=0x… FACILITATOR_PRIVATE_KEY=0x… MERCHANT_PRIVATE_KEY=0x… \
-SETTLER=0x271320B5dF6fc8Dc778304f53B1D7b01B0c2855E FEED_FILE=~/.sodi/demo-feed.json \
+SETTLER=0xb29990E4C28737ab9B0aFae0c308ae9D025AEB31 FEED_FILE=~/.sodi/demo-feed.json \
 npm start --workspace demo-agent
 ```
 

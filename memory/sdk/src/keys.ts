@@ -1,4 +1,4 @@
-import { type KeyPair, keyPairFromSignature } from '@sodi/a2a';
+import { type KeyPair, canonicalSignature, keyPairFromSignature } from '@sodi/a2a';
 import { hkdf } from '@noble/hashes/hkdf';
 import { sha256 } from '@noble/hashes/sha256';
 import { type Address, type Hex, type WalletClient, bytesToHex, getAddress, hexToBytes, keccak256, toBytes } from 'viem';
@@ -43,7 +43,7 @@ export async function deriveMemoryKey(wallet: WalletClient, epoch: number): Prom
 
 export async function deriveNamespaceSalt(wallet: WalletClient): Promise<Uint8Array> {
   const sig = await signDeterministic(wallet, namespaceSaltMessage(wallet.account!.address));
-  return hkdf(sha256, hexToBytes(sig), toBytes('sodi-memory-v1'), toBytes('namespace salt'), 32);
+  return hkdf(sha256, hexToBytes(canonicalSignature(sig)), toBytes('sodi-memory-v1'), toBytes('namespace salt'), 32);
 }
 
 /**

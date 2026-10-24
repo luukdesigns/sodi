@@ -61,7 +61,6 @@ export function startApis(opts: {
   /** The merchant's public address. */
   payTo: Address;
   receiver: StealthReceiver;
-  settler: Address;
   facilitator: WalletClient;
   publicClient: PublicClient;
   onSale?: (s: Sale) => void;
@@ -94,7 +93,7 @@ export function startApis(opts: {
       let txHash: Hex;
       if (payment.payload.stealth) {
         const verified = await opts.receiver.verify(payment, { asset: opts.asset, amount: opts.price, chainId: opts.chainId, domain: opts.domain });
-        txHash = await opts.receiver.settle(opts.facilitator, opts.publicClient, opts.settler, verified);
+        txHash = await opts.receiver.settle(opts.facilitator, opts.publicClient, verified);
       } else {
         if (a.to.toLowerCase() !== opts.payTo.toLowerCase() || BigInt(a.value) < opts.price) throw new Error('payment does not match the price');
         const { v, r, s } = parseSignature(payment.payload.signature);
@@ -109,7 +108,7 @@ export function startApis(opts: {
         const receipt = await opts.publicClient.waitForTransactionReceipt({ hash: txHash });
         if (receipt.status !== 'success') throw new Error('settlement reverted');
       }
-      opts.onSale?.({ at: Math.floor(Date.now() / 1000), resource: path, amount: BigInt(a.value), payer: a.from, payTo: a.to, stealth: Boolean(payment.payload.stealth), txHash });
+      opts.onSale?.({ at: Math.floor(Date.now() / 1000), resource: path, amount: BigInt(a.value), payer: a.from, payTo: payment.payload.stealth?.stealthAddress ?? a.to, stealth: Boolean(payment.payload.stealth), txHash });
 
       const data = quote
         ? { symbol: quote[1], priceInWeth: await priceInWeth(opts.publicClient, quote[1]!) }

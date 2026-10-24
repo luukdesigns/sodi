@@ -17,13 +17,20 @@ import { type Address, type Hex, bytesToHex, getAddress, hexToBytes } from 'viem
  *
  * Every AEAD call authenticates the context (chain, contract, channel, author), so an envelope copied
  * to another channel, contract or author fails to decrypt.
+ *
+ * The plaintext starts with a 32-byte commitment to the content key, and its padding must be zero.
+ * XChaCha20-Poly1305 alone does not commit to its key, so without this an author could build one
+ * envelope that opens to different messages under different content keys and show different readers
+ * (or an auditor) different things. (Revision 1.1; envelopes from revision 1.0 no longer open.)
  */
 
 export const ENVELOPE_MAGIC = 0xa2;
 export const ENVELOPE_VERSION = 0x01;
 const WRAPPED = 48; // 32-byte key + 16-byte tag
 const NONCE = 24;
-const PAD_BUCKETS = [256, 1024, 4096, 12_288];
+// The larger buckets are for memory blobs stored off-chain; on-chain envelopes are capped by the contracts.
+const PAD_BUCKETS = [256, 1024, 4096, 12_288, 65_536, 262_144, 1_048_576];
+const COMMITMENT = 32;
 const enc = new TextEncoder();
 
 export interface KeyPair {
@@ -46,8 +53,41 @@ export function keyDerivationMessage(address: Address): string {
   ].join('\n');
 }
 
+const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+/**
+ * One canonical encoding of an ECDSA signature: low s, v as 27/28. Wallets differ in how they encode
+ * the same signature (v = 0/1 or 27/28, high or low s); keys derived from it must not.
+ */
+export function canonicalSignature(signature: Hex): Hex {
+  const b = hexToBytes(signature);
+  if (b.length !== 65) throw new Error('expected a 65-byte signature');
+  let s = BigInt(bytesToHex(b.slice(32, 64)));
+  let yParity = b[64]! >= 27 ? b[64]! - 27 : b[64]!;
+  if (yParity > 1) throw new Error('invalid signature recovery byte');
+  if (s > SECP256K1_N / 2n) {
+    s = SECP256K1_N - s;
+    yParity ^= 1;
+  }
+  const out = new Uint8Array(65);
+  out.set(b.slice(0, 32));
+  out.set(hexToBytes(`0x${s.toString(16).padStart(64, '0')}`), 32);
+  out[64] = 27 + yParity;
+  return bytesToHex(out);
+}
+
+/** True if `publicKey` is an X25519 key that can be encrypted to (rejects low-order points). */
+export function isValidRecipientKey(publicKey: Hex): boolean {
+  try {
+    x25519.getSharedSecret(randomBytes(32), hexToBytes(publicKey));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function keyPairFromSignature(signature: Hex): KeyPair {
-  const seed = hkdf(sha256, hexToBytes(signature), enc.encode('sodi-a2a-v1'), enc.encode('x25519 messaging key'), 32);
+  const seed = hkdf(sha256, hexToBytes(canonicalSignature(signature)), enc.encode('sodi-a2a-v1'), enc.encode('x25519 messaging key'), 32);
   return { privateKey: seed, publicKey: bytesToHex(x25519.getPublicKey(seed)) };
 }
 
@@ -82,7 +122,13 @@ export function pad(message: Uint8Array): Uint8Array {
 export function unpad(padded: Uint8Array): Uint8Array {
   const len = new DataView(padded.buffer, padded.byteOffset).getUint32(0);
   if (len > padded.length - 4) throw new Error('invalid padding');
+  for (let i = 4 + len; i < padded.length; i++) if (padded[i] !== 0) throw new Error('invalid padding');
   return padded.slice(4, 4 + len);
+}
+
+/** Binds a plaintext to the one content key that encrypts it. */
+function keyCommitment(contentKey: Uint8Array): Uint8Array {
+  return hkdf(sha256, contentKey, enc.encode('sodi-a2a-v1'), enc.encode('content key commitment'), COMMITMENT);
 }
 
 function wrapKey(shared: Uint8Array, ephemeralPub: Uint8Array, recipientPub: Uint8Array): Uint8Array {
@@ -115,13 +161,22 @@ export function seal(message: Uint8Array, recipients: Hex[], context: Context): 
   const wrapped = shuffle(
     unique.map((r) => {
       const rPub = hexToBytes(r);
-      const kek = wrapKey(x25519.getSharedSecret(ephemeral, rPub), ephemeralPub, rPub);
+      let shared: Uint8Array;
+      try {
+        shared = x25519.getSharedSecret(ephemeral, rPub);
+      } catch {
+        throw new Error(`recipient key ${r} is not a valid X25519 public key`);
+      }
+      const kek = wrapKey(shared, ephemeralPub, rPub);
       return xchacha20poly1305(kek, zeroNonce, aad).encrypt(contentKey);
     }),
   );
 
   const nonce = randomBytes(NONCE);
-  const ciphertext = xchacha20poly1305(contentKey, nonce, aad).encrypt(pad(message));
+  const body = new Uint8Array(COMMITMENT + message.length);
+  body.set(keyCommitment(contentKey));
+  body.set(message, COMMITMENT);
+  const ciphertext = xchacha20poly1305(contentKey, nonce, aad).encrypt(pad(body));
 
   const out = new Uint8Array(2 + 32 + 2 + wrapped.length * WRAPPED + NONCE + ciphertext.length);
   let o = 0;
@@ -193,7 +248,10 @@ export function openWithContentKey(envelope: Uint8Array, contentKey: Uint8Array,
   try {
     const nonce = envelope.slice(p.slotsEnd, p.slotsEnd + NONCE);
     const padded = xchacha20poly1305(contentKey, nonce, associatedData(context)).decrypt(envelope.slice(p.slotsEnd + NONCE));
-    return unpad(padded);
+    const body = unpad(padded);
+    const expected = keyCommitment(contentKey);
+    if (body.length < COMMITMENT || expected.some((b, i) => body[i] !== b)) return null;
+    return body.slice(COMMITMENT);
   } catch {
     return null;
   }

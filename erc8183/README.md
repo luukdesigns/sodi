@@ -86,7 +86,12 @@ await jobs.complete(jobId, { verdict: 'Approved' });
 | | Every state change and payment |
 | | A hash committing to the deliverable, and its size within padding buckets |
 
-The hook can check that a deliverable is a well-formed envelope bound to its commitment, but not that it was encrypted to the right keys. That's left to the evaluator: if they can't open the work, they reject it, so a provider who encrypts badly doesn't get paid.
+The hook can check that a deliverable is a well-formed envelope bound to its commitment, but not that it was encrypted to the right keys, and the evaluator can't tell from the envelope whether the client is one of its readers. So the SDK makes the evaluator guarantee it instead:
+
+- `complete()` refuses unless the evaluator can open the deliverable;
+- the evaluator's confidential review always carries the deliverable's content key, so the client can read the work even if the provider left them out. `readDeliverable()` falls back to that key automatically.
+
+The `ConfidentialReason` event's indexed `evaluator` field holds whoever acted; for a `reject` of a job that was never funded, that is the client.
 
 ## Compatibility
 

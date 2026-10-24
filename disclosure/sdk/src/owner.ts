@@ -70,7 +70,12 @@ export class Discloser {
       if (!key) continue;
       if (opts.filter) {
         const { openWithContentKey } = await import('@sodi/a2a');
-        const m = JSON.parse(new TextDecoder().decode(openWithContentKey(envelope, key, ctx)!));
+        let m: { type: string; body: unknown };
+        try {
+          m = JSON.parse(new TextDecoder().decode(openWithContentKey(envelope, key, ctx)!));
+        } catch {
+          continue; // not a Sodi message; anyone can send one
+        }
         if (!opts.filter({ author: log.args.author!, type: m.type, body: m.body })) continue;
       }
       items.push({ kind: 'a2a', chainId, contract: opts.contract, ref: `${log.transactionHash}:${log.logIndex}`, contentKey: bytesToHex(key) });
@@ -168,7 +173,7 @@ export class StandingGrants {
   async grant(auditor: Address, scope: string, note: string): Promise<void> {
     const auditorKey = await this.identity.keyOf(auditor);
     await this.memory.update<StandingGrant[]>(StandingGrants.SLOT, (cur) => [
-      ...(cur ?? []).filter((g) => !(g.auditor === auditor && g.scope === scope && !g.revokedAt)),
+      ...(cur ?? []).filter((g) => !(sameAddress(g.auditor, auditor) && g.scope === scope && !g.revokedAt)),
       { auditor, auditorKey, scope, since: Math.floor(Date.now() / 1000) },
     ]);
     await this.identity.send({ to: [auditor], type: 'sodi-standing-grant', body: { scope, note, owner: this.identity.address } });
@@ -177,10 +182,12 @@ export class StandingGrants {
   async revoke(auditor: Address, scope: string): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     await this.memory.update<StandingGrant[]>(StandingGrants.SLOT, (cur) =>
-      (cur ?? []).map((g) => (g.auditor === auditor && g.scope === scope && !g.revokedAt ? { ...g, revokedAt: now } : g)),
+      (cur ?? []).map((g) => (sameAddress(g.auditor, auditor) && g.scope === scope && !g.revokedAt ? { ...g, revokedAt: now } : g)),
     );
     await this.identity.send({ to: [auditor], type: 'sodi-standing-revoked', body: { scope, owner: this.identity.address } });
   }
 }
 
 export const memoryScope = (slotId: Hex) => `memory:${slotId.toLowerCase()}`;
+
+const sameAddress = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();

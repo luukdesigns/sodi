@@ -106,7 +106,7 @@ describe('Sodi Disclosure', () => {
     await jobs(provider, 'provider').setBudget(jobId, 10_000_000n);
     await jobs(owner, 'owner').fund(jobId);
     await jobs(provider, 'provider').submitConfidential(jobId, { reconciled: true, discrepancies: 0 });
-    await jobs(evaluator, 'evaluator').complete(jobId, { verdict: 'Checks out' });
+    await jobs(evaluator, 'evaluator').complete(jobId, { verdict: 'Checks out' }, { fromBlock });
 
     // Two rx402 deposits; one funds a session.
     const test = createTestClient({ chain, mode: 'anvil', transport: http(RPC) });
@@ -136,7 +136,13 @@ describe('Sodi Disclosure', () => {
     await rx.openSession(1_000_000n);
 
     discloser = new Discloser(publicClient, ids.owner!);
-    auditor = new Auditor(publicClient, ids.auditor!);
+    // This test deploys its own A2A, memory and job contracts, so the auditor is told to trust them.
+    auditor = new Auditor(publicClient, ids.auditor!, undefined, {
+      a2a: [registry],
+      memory: [memoryContract],
+      erc8183Hooks: [hook],
+      pools: [{ pool: poolDeployment.pools.USDG.pool, entrypoint: poolDeployment.contracts.Entrypoint }],
+    });
   }, 600_000);
 
   it('discloses exactly the chosen items, and the auditor verifies them on-chain', async () => {
@@ -195,6 +201,32 @@ describe('Sodi Disclosure', () => {
     await expect(auditor.verifyPool({ ...grant!, pool: [forged] }, BigInt(poolDeployment.deploymentBlock))).rejects.toThrow(/does not match/);
   });
 
+  it('rejects items from contracts it does not trust (an owner could deploy one that says anything)', async () => {
+    const [grant] = await auditor.grants(fromBlock);
+    const item = grant!.items.find((i) => i.kind === 'a2a')!;
+    await expect(auditor.read({ ...item, contract: mallory.account.address })).rejects.toThrow(/not a trusted a2a contract/);
+    const p = grant!.pool![0]!;
+    await expect(auditor.verifyPool({ ...grant!, pool: [{ ...p, pool: mallory.account.address }] }, 0n)).rejects.toThrow(/not a trusted pool/);
+  });
+
+  it('keeps working when strangers send it malformed grants or spoofed notices', async () => {
+    for (const body of [null, {}, { owner: mallory.account.address }, { owner: mallory.account.address, items: 'x' }]) {
+      await ids.mallory!.send({ to: [auditorW.account.address], type: 'sodi-disclosure', body });
+    }
+    await ids.mallory!.send({ to: [auditorW.account.address], type: 'sodi-standing-revoked', body: { scope: 'memory:0x1', from: owner.account.address } });
+    expect(await auditor.grants(fromBlock)).toHaveLength(1);
+    const spoof = (await auditor.standingNotices(fromBlock)).find((n) => n.scope === 'memory:0x1')!;
+    expect(spoof.from).toBe(mallory.account.address);
+  });
+
+  it('rejects a pool disclosure that leaves out later withdrawals', async () => {
+    const note = structuredClone(rxStore.load().notes.find((n) => n.spendCount > 0)!);
+    await rx.openSession(500_000n); // the same deposit funds a second session
+    const truncated = await disclosePoolNote({ publicClient, mnemonic: 'legal winner thank year wave sausage worth useful legal winner thank yellow', pool: poolDeployment.pools.USDG.pool, entrypoint: poolDeployment.contracts.Entrypoint, note });
+    const [grant] = await auditor.grants(fromBlock);
+    await expect(auditor.verifyPool({ ...grant!, pool: [truncated] }, BigInt(poolDeployment.deploymentBlock))).rejects.toThrow(/incomplete/);
+  }, 300_000);
+
   it('grants standing access to future writes, then revokes it', async () => {
     const standing = new StandingGrants(ownerMemory, ids.owner!);
     const tradesId = ownerMemory.slotId('trades');
@@ -212,6 +244,6 @@ describe('Sodi Disclosure', () => {
     const visible = await auditor.readStandingMemory(memoryContract, owner.account.address, tradesId, fromBlock);
     expect(visible.map((v) => v.version)).toEqual([4n]); // shared while granted; not before, not after revoke
     const notices = await auditor.standingNotices(fromBlock);
-    expect(notices.map((n) => n.type)).toEqual(['sodi-standing-grant', 'sodi-standing-revoked']);
+    expect(notices.filter((n) => n.from === owner.account.address).map((n) => n.type)).toEqual(['sodi-standing-grant', 'sodi-standing-revoked']);
   }, 300_000);
 });

@@ -1,6 +1,6 @@
 import { type PoolNote, depositSecrets, generateMasterKeys, withdrawalSecrets } from '@sodi/rx402';
 import { commitmentHash, nullifierHash, precommitmentHash } from '@sodi/rx402';
-import { type Address, type Hex, type PublicClient, decodeEventLog, parseAbiItem } from 'viem';
+import { type Address, type Hex, type PublicClient, decodeEventLog, parseAbi, parseAbiItem } from 'viem';
 
 import type { PoolDisclosure } from './types.js';
 
@@ -10,6 +10,7 @@ const poolDeposited = parseAbiItem(
 const poolWithdrawn = parseAbiItem(
   'event Withdrawn(address indexed _processooor, uint256 _value, uint256 _spentNullifier, uint256 _newCommitment)',
 );
+const poolNullifiers = parseAbi(['function nullifierHashes(uint256) view returns (bool)']);
 const relayed = parseAbiItem(
   'event WithdrawalRelayed(address indexed _relayer, address indexed _recipient, address indexed _asset, uint256 _amount, uint256 _feeAmount)',
 );
@@ -109,5 +110,14 @@ export async function verifyPoolDisclosure(
     });
     value = remaining;
   }
+  // The history must be complete: the last disclosed commitment must still be unspent. Otherwise a
+  // later withdrawal (or ragequit) was left out, and "remaining" would be wrong.
+  const lastSpent = await publicClient.readContract({
+    address: d.pool,
+    abi: poolNullifiers,
+    functionName: 'nullifierHashes',
+    args: [nullifierHash(secrets.at(-1)!.nullifier)],
+  });
+  if (lastSpent) throw new Error('disclosure is incomplete: a later withdrawal from this deposit was not disclosed');
   return { depositor: dep.args._depositor, deposited: dep.args._value, sessions, remaining: value };
 }
