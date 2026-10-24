@@ -77,7 +77,7 @@ Each finished session signs a transfer to the [SodiRecycler](../../contracts/REA
 
 - **It waits.** The current session, and any session that signed a payment in the last 10 minutes, is left alone: a merchant may still settle a signed payment, and the funds must be there when it does.
 - **It's public, like any deposit.** Anyone can see that this session put this amount back into the pool; once it's there, its later withdrawals are as private as any other.
-- **Small amounts can't go back.** The pool has a minimum deposit (0.1 USDG on testnet). Sessions holding less, after the relayer's fee, are reported as `too-small`.
+- **Small amounts can't go back.** The pool has a minimum deposit (0.01 USDG on testnet). Sessions holding less, after the relayer's fee, are reported as `too-small`.
 - **Merchants can do the same** with stealth payments: `poolWallet.recycle(privateKeyToAccount(merchant.keyFor(p.ephemeralPublicKey)), submitter)` puts one stealth address's balance into the merchant's own pool. Recycle them one at a time, not in one batch, or the batch links them.
 
 ## How a payment works

@@ -20,7 +20,7 @@
       "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
       "pool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76",
       "scope": "15275348139274045583819307907082263242021424355600177454175009643064466885852",
-      "minimumDepositAmount": "100000",
+      "minimumDepositAmount": "10000",
       "vettingFeeBPS": 0,
       "maxRelayFeeBPS": 100,
       "configChanges": [
@@ -29,6 +29,12 @@
           "minimumDepositAmount": "100000",
           "reason": "testnet USDG is scarce; lowered from 1 USDG to 0.1 USDG",
           "tx": "0x388360e9568b5422f6d2b8ecc2beae289790e04e05a66ecf56d98a4c5883c81f"
+        },
+        {
+          "date": "2026-10-24",
+          "minimumDepositAmount": "10000",
+          "reason": "lowered from 0.1 to 0.01 USDG so leftover session funds can be recycled on testnet; testnet minimums only keep the pool state sane",
+          "tx": "0x33f425afbee56bdd9b33ae2eeb3d8c9d9aec01aa248bff62436b6965fbc39bf7"
         }
       ]
     }
@@ -57,6 +63,22 @@
     "block": 141918085,
     "tx": "0x8c53c205ad366ff33850242fb41c2e84b989c77262ae49ce6b24c629a817e4b7",
     "entrypoint": "0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce",
-    "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F"
+    "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F",
+    "liveRun": {
+      "description": "packages/rx402/demo/recycle-live.ts on 2026-10-24, with the live agent store: two finished sessions recycled through the relayer (0.0001 USDG fee each), the new deposits approved, and a new session funded by a ZK withdrawal from a recycled deposit",
+      "relayer": "0xE1F276aA58A95f0Ab800fd187eCDcf6E23296Bd7",
+      "recycles": {
+        "0x1dc913FA0e09AE9c967dd7aF2323fE78B8497C75": "0xe9ce94f44f809c863916a14383c85405d089ace5d382d0037be6a36bd5a47d9c",
+        "0x1f6A3c75B5235cD7D66f02B9f87A837E3B7f70eE": "0x3fdee462cf5940208bddf5783a03f515340615aa58f3efdd28bbfd89faf70249"
+      },
+      "tooSmall": [
+        "0x6489c8184C1F2abB6F78617aa8dE1C8A9913CFc3"
+      ],
+      "aspRoot": "0x08e634c7d5191a84f9962f9d4ff4f3266df7ff4093ea24fe7067c4a44d45bb09",
+      "sessionFromRecycledDeposit": {
+        "address": "0xfC7980a9D981C49f90ce9872694796C8103FAc66",
+        "fundingTx": "0xe8fc493b6d12b425405ce90ecf7bcd9744342d47528aab4bff150a0f7b3ddbbf"
+      }
+    }
   }
 }

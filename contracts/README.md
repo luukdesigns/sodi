@@ -60,12 +60,14 @@ Puts funds left at an address back into the pool: an rx402 session that has rota
 
 Tests (`forge test --match-contract SodiRecycler`), against a full local deployment of the pool: recycling with a fee, a front-runner swapping the deposit, a submitter raising its fee, moving the funds around the recycler, replays, dust below the minimum, and ragequits (with the ragequit verifier mocked). The [issuer's fork test](../issuer/test/e2e/recycle.test.ts) recycles real sessions through the relayer on a testnet fork.
 
+**Live on testnet** ([`recycle-live.ts`](../packages/rx402/demo/recycle-live.ts)): the live agent's two finished sessions (0.03975 and 0.03175 USDG) were recycled through the relayer, the approval service approved the new deposits, and a new session was funded by a zero-knowledge withdrawal from one of them. A third session, holding 0.007 USDG, was below the minimum and was left alone. Transactions are under `recycler.liveRun` in [`deployments/46630.json`](./deployments/46630.json).
+
 ## What the deploy script does
 
 1. Deploys the Groth16 `WithdrawalVerifier` and `CommitmentVerifier`.
 2. Deploys the `Entrypoint` behind an ERC-1967 (UUPS) proxy and initializes it with `OWNER_ADDRESS` and `POSTMAN_ADDRESS`.
 3. Deploys a `PrivacyPoolComplex` for USDG.
-4. Registers the pool with the Entrypoint (minimum deposit 1 USDG, 0% vetting fee, 1% max relay fee), if the deployer is the owner. On testnet the minimum was later lowered to 0.1 USDG, because testnet USDG is scarce; see `deployments/46630.json`.
+4. Registers the pool with the Entrypoint (minimum deposit 1 USDG, 0% vetting fee, 1% max relay fee), if the deployer is the owner. On testnet the minimum was later lowered to 0.1 USDG, because testnet USDG is scarce, and then to 0.01 USDG so leftover session funds can be recycled; see `deployments/46630.json`.
 
 Before deploying, it checks that the configured USDG address is a contract with 6 decimals and that you are on chain 46630.
 
