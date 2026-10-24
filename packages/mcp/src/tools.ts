@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { IssuerStatus, RecycleOutcome, Rx402Client } from '@sodi/rx402';
 import { formatUnits, parseUnits } from 'viem';
+import { inspectQuoteText } from 'wormhole-x402/quotetext';
 import { z } from 'zod';
 
 const DECIMALS = 6; // USDG
@@ -15,6 +18,8 @@ export interface McpOptions {
   issuer?: { status(): Promise<IssuerStatus> };
   /** Recycles finished sessions into the pool; the tool is offered when set. */
   recycle?: () => Promise<RecycleOutcome[]>;
+  /** A Sodi inference gateway; `ask_model` is offered when set. */
+  gateway?: { url: string; defaultModel: string; defaultMaxTokens?: number };
 }
 
 const usd = (v: bigint) => formatUnits(v, DECIMALS);
@@ -27,6 +32,10 @@ const json = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2) }],
 });
 const fail = (message: string) => ({ content: [{ type: 'text' as const, text: message }], isError: true });
+const sha256 = (s: string) => `sha256=${createHash('sha256').update(s).digest('hex')}`;
+
+/** Thrown from the quote inspection: carries rule codes only, never the quote's text. */
+class QuoteRefused extends Error {}
 
 /**
  * MCP tools over an rx402 client. Payments are capped three ways: the per-request maximum in the
@@ -152,6 +161,103 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
       const signed = (err as { payment?: { amount: bigint } }).payment;
       if (signed) totalSpent += signed.amount;
       return fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  if (options.gateway) {
+    const gateway = options.gateway;
+    server.registerTool(
+      'ask_model',
+      {
+        title: 'Ask another AI model, paid privately',
+        description:
+          'Sends a prompt to a model through the Sodi inference gateway and returns its answer. Each request is paid ' +
+          'in USDG from a private session address, so the gateway never learns who is asking. The model provider and ' +
+          'OpenRouter see the prompt (under the gateway operator\'s account, not yours), so do not send secrets. The ' +
+          'price is fixed before the request: input plus max_tokens of output at the listed rate.',
+        inputSchema: {
+          prompt: z.string().min(1).describe('The question or instruction for the model'),
+          system: z.string().optional().describe('Optional system prompt'),
+          model: z.string().optional().describe(`OpenRouter model id; default ${gateway.defaultModel}`),
+          max_tokens: z.number().int().positive().max(8192).optional().describe(`Cap on the answer length; default ${gateway.defaultMaxTokens ?? 1024}. The price assumes all of it is used.`),
+          max_price_usdg: z.string().optional().describe('Highest price to accept, e.g. "0.02"'),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      },
+      (args) => {
+        const run = paidCalls.then(() => askModel(args));
+        paidCalls = run.catch(() => {});
+        return run;
+      },
+    );
+
+    async function askModel({ prompt, system, model, max_tokens, max_price_usdg }: { prompt: string; system?: string; model?: string; max_tokens?: number; max_price_usdg?: string }) {
+      const target = new URL('/v1/chat/completions', gateway.url);
+      let cap = options.maxTotalSpend - totalSpent;
+      if (max_price_usdg !== undefined) {
+        const requested = toUnits(max_price_usdg);
+        if (requested < cap) cap = requested;
+      }
+      if (cap <= 0n) return fail('spending limit for this run has been reached');
+      const body = JSON.stringify({
+        model: model ?? gateway.defaultModel,
+        messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: prompt }],
+        max_tokens: max_tokens ?? gateway.defaultMaxTokens ?? 1024,
+      });
+      let notes: string[] = [];
+      try {
+        const { response, payment } = await client.fetch(
+          target,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body },
+          {
+            maxPaymentAmount: cap,
+            allowedHosts: options.allowedHosts.length ? [...options.allowedHosts, target.host] : [],
+            // The quote's free text is the gateway's to write: scan it before it is paid or shown to a model.
+            inspect: (quote) => {
+              const verdict = inspectQuoteText(quote);
+              if (verdict.decision !== 'allow') {
+                const codes = verdict.findings.map((f) => f.code).join(', ') || verdict.reason || 'unscannable';
+                throw new QuoteRefused(`refused the gateway's quote without paying: it failed the quote-text scan (${codes})`);
+              }
+              notes = verdict.findings.map((f) => f.code);
+            },
+          },
+        );
+        if (payment) totalSpent += payment.amount;
+        const text = await response.text();
+        if (!response.ok) {
+          // Error text is the gateway's to write too: pass it on only if it scans clean.
+          const shown = inspectQuoteText({ error: text.slice(0, 300) }).decision === 'allow' ? text.slice(0, 300) : '[withheld: failed the quote-text scan]';
+          return fail(`the gateway answered ${response.status}${payment ? ' (the signed payment was refused, so it should not be settled)' : ''}: ${shown}`);
+        }
+        const digest = response.headers.get('sodi-delivery-digest');
+        let answer: unknown;
+        let finish: unknown;
+        let usage: unknown;
+        try {
+          const parsed = JSON.parse(text);
+          answer = parsed.choices?.[0]?.message?.content;
+          finish = parsed.choices?.[0]?.finish_reason;
+          usage = parsed.usage;
+        } catch {
+          return fail('the gateway returned an unreadable answer');
+        }
+        const settlement = response.headers.get('payment-response');
+        return json({
+          model: model ?? gateway.defaultModel,
+          answer,
+          finishReason: finish ?? null,
+          usage: usage ?? null,
+          payment: payment ? { paidUsdg: usd(payment.amount), fromSession: payment.from, stealth: payment.stealth } : null,
+          delivery: { digest, verified: digest !== null && digest === sha256(text) },
+          settlementTx: settlement ? (JSON.parse(Buffer.from(settlement, 'base64').toString()).transaction ?? null) : null,
+          quoteScan: { decision: 'allow', nonBlockingFindings: notes },
+        });
+      } catch (err) {
+        const signed = (err as { payment?: { amount: bigint } }).payment;
+        if (signed) totalSpent += signed.amount;
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     }
   }
 

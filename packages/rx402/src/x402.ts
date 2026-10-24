@@ -30,17 +30,23 @@ export interface PaymentRequired {
 const decodeBase64Json = (s: string) => JSON.parse(Buffer.from(s, 'base64').toString('utf8'));
 const encodeBase64Json = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64');
 
-export async function parsePaymentRequired(res: Response): Promise<PaymentRequired> {
-  let body: Record<string, unknown>;
+/** The 402's payment requirements as the server sent them: the `PAYMENT-REQUIRED` header (v2) or the body. */
+export async function readPaymentRequired(res: Response): Promise<Record<string, unknown>> {
   const header = res.headers.get('payment-required');
-  if (header) body = decodeBase64Json(header);
-  else {
-    try {
-      body = (await res.json()) as Record<string, unknown>;
-    } catch {
-      throw new Error('402 response has no payment requirements');
-    }
+  try {
+    const body = header ? decodeBase64Json(header) : await res.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
+    return body as Record<string, unknown>;
+  } catch {
+    throw new Error('402 response has no payment requirements');
   }
+}
+
+export async function parsePaymentRequired(res: Response): Promise<PaymentRequired> {
+  return toPaymentRequired(await readPaymentRequired(res));
+}
+
+export function toPaymentRequired(body: Record<string, unknown>): PaymentRequired {
   const version = body.x402Version === 2 ? 2 : 1;
   const accepts = (body.accepts ?? []) as Record<string, unknown>[];
   return {

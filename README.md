@@ -47,7 +47,8 @@ sodi/
 ├── contracts/        Pool deployment and the Sodi recycler (Foundry)
 ├── packages/
 │   ├── rx402/        Agent SDK: deposits, private sessions, x402 payments (@sodi/rx402)
-│   └── mcp/          MCP server: private x402 payments as agent tools (@sodi/mcp)
+│   ├── mcp/          MCP server: private x402 payments as agent tools (@sodi/mcp)
+│   └── inference-gateway/  Private pay-per-request inference over rx402, backed by OpenRouter
 ├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses
 ├── issuer/           Session issuer: keeps the pool secret off the agent's machine
@@ -87,6 +88,7 @@ sodi/
 - [x] Recycling: leftover session funds and stealth payments go back into the pool with no gas at the address ([SodiRecycler](./contracts/README.md#sodirecycler))
 - [x] Session issuer: the agent holds only its own key; the pool secret and the hard limits live elsewhere ([issuer](./issuer))
 - [x] Public demo agent: buys data privately on a loop, with a live public page ([demo-agent](./demo-agent)); needs a server to stay up
+- [x] Inference gateway: any OpenRouter model, paid per request from a private session, with no account and no logs ([inference-gateway](./packages/inference-gateway)); tested end to end on a testnet fork, needs a server to go live
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Yield pool: the pool earns Morpho interest, so savers deepen the anonymity set ([design and prototype](./docs/yield-pool-design.md))
 - [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))

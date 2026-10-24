@@ -7,6 +7,7 @@ MCP server that gives AI agents a private wallet for x402 APIs. When a tool call
 | Tool | What it does |
 | --- | --- |
 | `rx402_fetch` | Fetches a URL. If it costs money (x402), pays privately and returns the response. Optional `max_price_usdg` caps the price for that request. |
+| `ask_model` | Asks another model through the Sodi [inference gateway](../inference-gateway), paying each request from a private session. Scans the gateway's 402 quote for prompt injection ([wormhole-x402](https://www.npmjs.com/package/wormhole-x402) quote-text scan, offline) before anything is signed or shown to the model, and checks the delivery digest. The model provider sees the prompt, under the gateway operator's account. |
 | `rx402_status` | Private balance in the pool, current session, and spending limits. |
 | `rx402_open_session` | Pre-funds a new session ahead of a burst of paid requests (normally automatic). |
 | `rx402_recycle` | Moves what's left in finished sessions back into the pool, through the relayer and the [recycler](../../contracts/README.md#sodirecycler), so nothing is stranded at old addresses. Leaves the current session and any with recently signed payments alone. Offered when a recycler is deployed (it is on testnet). |
@@ -68,7 +69,12 @@ For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/
 | `OWNER_PRIVATE_KEY` | unset | Enables `rx402_deposit` |
 | `RX402_RECYCLER` | from the deployment file | SodiRecycler for `rx402_recycle`; recycles are submitted by the relayer at `RELAYER_URL`, also with a session issuer |
 | `RX402_MAX_RECYCLE_FEE` | `0.001` | USDG; refuse relayers that charge more per recycle |
+| `RX402_GATEWAY_URL` | `https://inference.sodi.network` | Inference gateway for `ask_model`; `off` removes the tool |
+| `RX402_GATEWAY_MODEL` | `meta-llama/llama-3.3-70b-instruct` | Default model for `ask_model` |
+| `RX402_GATEWAY_MAX_TOKENS` | `1024` | Default answer cap; the price assumes all of it is used |
 
 ## Verified
 
 `test/e2e/run-fork.sh` runs the whole stack on a local fork of Robinhood Chain testnet. An MCP client deposits through the tool, the approval service approves it, and the agent pays an x402 v1 and a v2 API. The session is funded through the HTTP relayer, which takes its 0.5% fee. A per-call price cap and the run spending limit both block payments they should. After a rotation, `rx402_recycle` leaves the old session alone while its payments could still be settled, then returns what's left to the pool through the relayer.
+
+`ask_model` is tested in the [inference gateway's](../inference-gateway) fork suite. It pays the gateway from the agent's own session and returns the answer with a verified digest. Given a hostile 402, whose description tells the model to send funds, it refuses with only the rule codes, and nothing is signed.

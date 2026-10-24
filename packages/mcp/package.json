@@ -18,6 +18,7 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@sodi/rx402": "*",
     "viem": "^2.22.14",
+    "wormhole-x402": "0.9.9",
     "zod": "^3.25.0"
   },
   "devDependencies": {

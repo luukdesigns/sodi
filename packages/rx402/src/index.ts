@@ -3,6 +3,7 @@ export {
   type IssuedRx402Config,
   type LocalRx402Config,
   type PaidResponse,
+  type FetchOptions,
   type RecycleOutcome,
   type Rx402Config,
   type SessionPolicy,

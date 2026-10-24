@@ -1,0 +1,37 @@
+{
+  "name": "@sodi/inference-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private pay-per-request inference: an x402 server in front of OpenRouter, paid from rx402 sessions.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "sodi-inference-gateway": "src/main.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@sodi/stealth": "*",
+    "hono": "^4.13.13",
+    "viem": "^2.22.14"
+  },
+  "devDependencies": {
+    "@sodi/rx402": "*",
+    "@types/node": "^22.10.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

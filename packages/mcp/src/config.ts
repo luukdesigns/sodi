@@ -91,6 +91,16 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
     issuer,
   };
 
+  // The inference gateway for ask_model; RX402_GATEWAY_URL=off turns the tool off.
+  const gatewayUrl = env('RX402_GATEWAY_URL', 'https://inference.sodi.network');
+  if (gatewayUrl !== 'off') {
+    options.gateway = {
+      url: gatewayUrl,
+      defaultModel: env('RX402_GATEWAY_MODEL', 'meta-llama/llama-3.3-70b-instruct'),
+      defaultMaxTokens: Number(env('RX402_GATEWAY_MAX_TOKENS', '1024')),
+    };
+  }
+
   // Recycling goes through the relayer (connected on first use when sessions come from an issuer).
   const recycler = (process.env.RX402_RECYCLER ?? deployment.contracts.SodiRecycler) as Address | undefined;
   if (recycler) {

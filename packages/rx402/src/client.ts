@@ -8,7 +8,7 @@ import { erc20Abi } from './chain.js';
 import { type RecycleSubmitter, type TokenDomain, USDG_DOMAIN, recycleFrom, recycleMinimum } from './recycle.js';
 import { PoolWallet, type PoolWalletConfig } from './wallet.js';
 import { MAX_VALIDITY_SECONDS } from './x402.js';
-import { paymentHeader, parsePaymentRequired, selectRequirement, signAuthorization } from './x402.js';
+import { paymentHeader, readPaymentRequired, selectRequirement, signAuthorization, toPaymentRequired } from './x402.js';
 
 /** Where new sessions come from: the pool wallet in-process, or a session issuer. */
 export interface SessionSource {
@@ -66,6 +66,18 @@ export interface IssuedRx402Config extends CommonConfig {
 }
 
 export type Rx402Config = LocalRx402Config | IssuedRx402Config;
+
+export interface FetchOptions {
+  /** Lowers the per-request cap for this call. */
+  maxPaymentAmount?: bigint;
+  /** Only pay these hosts (checked after redirects). */
+  allowedHosts?: string[];
+  /**
+   * Sees the 402's payment requirements exactly as the server sent them, before anything is signed.
+   * Throw to refuse the payment; the error propagates and nothing is paid.
+   */
+  inspect?: (paymentRequired: Record<string, unknown>, url: URL) => void | Promise<void>;
+}
 
 export interface PaidResponse {
   response: Response;
@@ -264,21 +276,24 @@ export class Rx402Client {
   async fetch(
     input: string | URL,
     init: RequestInit = {},
-    options: { maxPaymentAmount?: bigint; allowedHosts?: string[] } = {},
+    options: FetchOptions = {},
   ): Promise<PaidResponse> {
     const first = await fetch(input, init);
     if (first.status !== 402) return { response: first };
     // Pay the server that actually asked for payment, after any redirects, and check that one.
     const url = new URL(first.url || String(input));
-    const required = await parsePaymentRequired(first);
+    const raw = await readPaymentRequired(first);
+    // Before anything is signed: the caller may refuse the quote (e.g. on what its text says).
+    if (options.inspect) await options.inspect(raw, url);
+    const required = toPaymentRequired(raw);
     return this.exclusive(() => this.pay(url, init, options, required));
   }
 
   private async pay(
     url: URL,
     init: RequestInit,
-    options: { maxPaymentAmount?: bigint; allowedHosts?: string[] },
-    required: Awaited<ReturnType<typeof parsePaymentRequired>>,
+    options: FetchOptions,
+    required: ReturnType<typeof toPaymentRequired>,
   ): Promise<PaidResponse> {
     const chainId = await this.getChainId();
     const controls = this.config.controls?.load();
