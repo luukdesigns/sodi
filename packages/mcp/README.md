@@ -19,6 +19,10 @@ An agent can never spend more than:
 - `RX402_MAX_TOTAL_SPEND` while the server runs (default 5 USDG).
 - Hosts in `RX402_ALLOWED_HOSTS`, if set.
 
+### With a session issuer
+
+With `RX402_MNEMONIC`, the MCP server's machine holds the whole pool, and these limits are enforced by the server itself. For an agent that runs unattended, run a [session issuer](../../issuer) on another machine and give the MCP server `RX402_ISSUER_URL` and `RX402_AGENT_KEY` instead. The issuer's kill switch and 24-hour limit then hold even if the agent's machine is compromised. `rx402_deposit` isn't offered in this mode; deposits are made on the issuer's side.
+
 ## Use with Claude
 
 The server needs a running [relayer](../../relayer) and [approval service](../../asp).
@@ -45,7 +49,9 @@ For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/
 
 | Variable | Default | |
 | --- | --- | --- |
-| `RX402_MNEMONIC` | required | Seed for pool secrets. Treat it like a wallet seed. |
+| `RX402_MNEMONIC` | required without an issuer | Seed for pool secrets. Treat it like a wallet seed. |
+| `RX402_ISSUER_URL` | unset | Get sessions from a [session issuer](../../issuer) instead; the agent then holds no pool secret. Set this or `RX402_MNEMONIC`, not both. |
+| `RX402_AGENT_KEY` | with an issuer | The agent's own key: signs requests to the issuer and derives session keys. |
 | `RELAYER_URL` | `http://localhost:8403` | |
 | `ASP_URL` | `http://localhost:8402` | |
 | `RPC_URL` | Robinhood Chain testnet | |

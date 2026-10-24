@@ -8,6 +8,7 @@
     "packages/*",
     "asp",
     "relayer",
+    "issuer",
     "dashboard",
     "a2a/sdk",
     "erc8183/sdk",

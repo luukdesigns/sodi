@@ -99,6 +99,10 @@ Each finding above "low" came with a demonstration: a failing Foundry test, a vi
 
 **C2.** The hook can't check who an envelope is encrypted to, and the evaluator can't tell either. So the SDK's `complete()` refuses unless the evaluator can open the deliverable, and the evaluator's confidential review always carries the deliverable's content key, which `readDeliverable()` uses when the client wasn't a recipient. An evaluator who deliberately withholds the key could still leave the client without the work; the evaluator is already a trusted party in ERC-8183. Test: `erc8183/sdk/test/e2e/audit-job.test.ts`.
 
+## Since the review
+
+- **The pool secret on the agent's machine.** The review took the agent's host as trusted. An agent holding the mnemonic can withdraw the whole pool, and its caps are enforced in its own code. The new [session issuer](../issuer) holds the mnemonic and the hard limits elsewhere; the agent holds only a key that can ask for sessions. Tests: `issuer/test`.
+
 ## Open and accepted
 
 - **C4: shared sequential nonce.** SodiMemory and SodiA2A use one relay nonce per signer. Concurrent relayed writes from two copies of one agent collide, a relayer can hold a signed write until its deadline, and a gasless agent can't cancel one. Fixing this means new contracts: unordered nonces with cancellation, or for memory, dropping the nonce in favour of the version check. Planned before mainnet.

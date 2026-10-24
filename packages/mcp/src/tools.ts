@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Rx402Client } from '@sodi/rx402';
+import type { IssuerStatus, Rx402Client } from '@sodi/rx402';
 import { formatUnits, parseUnits } from 'viem';
 import { z } from 'zod';
 
@@ -11,6 +11,8 @@ export interface McpOptions {
   maxTotalSpend: bigint;
   /** Only these hosts may be paid; empty means any. */
   allowedHosts: string[];
+  /** Set when sessions come from a session issuer: the pool and the hard limits live there. */
+  issuer?: { status(): Promise<IssuerStatus> };
 }
 
 const usd = (v: bigint) => formatUnits(v, DECIMALS);
@@ -45,8 +47,21 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
     async () => {
       const s = client.currentSession();
       const p = client.policy;
+      const issuer = options.issuer
+        ? await options.issuer.status().then(
+            (st) => ({
+              paused: st.paused,
+              maxSessionUsdg: usd(BigInt(st.maxSessionBudget)),
+              dailyLimitUsdg: st.dailyLimit ? usd(BigInt(st.dailyLimit)) : null,
+              fundedLast24hUsdg: usd(BigInt(st.fundedLast24h)),
+            }),
+            (err: Error) => ({ error: err.message }),
+          )
+        : undefined;
+      const pool = client.poolBalance();
       return json({
-        poolBalanceUsdg: usd(client.poolBalance()),
+        poolBalanceUsdg: pool !== undefined ? usd(pool) : null,
+        ...(issuer ? { sessionIssuer: issuer } : {}),
         session: s
           ? { address: s.address, remainingUsdg: usd(s.remaining), payments: s.payments, ageSeconds: s.ageSeconds }
           : null,

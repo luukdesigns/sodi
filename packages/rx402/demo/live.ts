@@ -147,7 +147,7 @@ try {
   console.log(`   public address ${MERCHANT} received ${usd(await bal(MERCHANT))} (ordinary API only)`);
   const found = await new StealthMerchant(stealthKeys, SETTLER).scan(publicClient, { fromBlock: startBlock });
   console.log(`   stealth payments found from announcements: ${found.length}, ${found.map((f) => `${usd(f.amount ?? 0n)} at ${f.stealthAddress.slice(0, 10)}…`).join(', ')}`);
-  console.log(`   pool balance left for the agent: ${usd(client.poolBalance())}`);
+  console.log(`   pool balance left for the agent: ${usd(client.poolBalance()!)}`);
 } catch (err) {
   console.error(err);
   process.exitCode = 1;

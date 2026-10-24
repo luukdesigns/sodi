@@ -57,6 +57,23 @@ export interface WalletState {
   sessions: Session[];
   /** Payment history; absent in stores written before it existed. */
   payments?: PaymentRecord[];
+  /** Agent with a session issuer: session indexes reserved so far. */
+  agentSessionCount?: number;
+  /** Session issuer: every session it agreed to fund. */
+  grants?: Grant[];
+}
+
+/** A session the issuer agreed to fund. Counts against its limits from the moment it is accepted. */
+export interface Grant {
+  agent: Address;
+  address: Address;
+  budget: string;
+  at: number;
+  /** failed: the withdrawal hadn't landed when the issuer gave up; it may still land, so it still counts. */
+  status: 'pending' | 'funded' | 'failed';
+  received?: string;
+  fundingTx?: Hex;
+  error?: string;
 }
 
 export interface Store {

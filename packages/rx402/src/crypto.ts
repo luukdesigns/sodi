@@ -130,3 +130,18 @@ export function sessionPrivateKey(keys: MasterKeys, label: bigint, index: bigint
   const k = (h % (SECP256K1_N - 1n)) + 1n;
   return `0x${k.toString(16).padStart(64, '0')}`;
 }
+
+/**
+ * Private key of the agent's n-th session when sessions are funded by a session issuer. Derived from
+ * the agent key, so the agent can recover a session the issuer funded even if it crashed before
+ * saving it, and the issuer never holds or sends a session key.
+ */
+export function agentSessionPrivateKey(agentKey: Hex, index: bigint): Hex {
+  const h = BigInt(
+    keccak256(
+      encodeAbiParameters([{ type: 'string' }, { type: 'bytes32' }, { type: 'uint256' }], ['sodi-rx402-agent-session-v1', agentKey, index]),
+    ),
+  );
+  const k = (h % (SECP256K1_N - 1n)) + 1n;
+  return `0x${k.toString(16).padStart(64, '0')}`;
+}

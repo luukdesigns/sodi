@@ -39,6 +39,24 @@ await client.deposit(10_000_000n);   // public: 10 USDG into the pool
 const { response, payment } = await client.fetch('https://api.example.com/paid-data');
 ```
 
+### Without the pool secret on the agent
+
+Whoever holds the mnemonic can withdraw the whole pool, and the client's caps run on the agent's own machine. For an agent that runs unattended, give it only an agent key and let a [session issuer](../../issuer) hold the mnemonic and enforce the limits:
+
+```ts
+import { IssuerSessions, Rx402Client } from '@sodi/rx402';
+
+const client = new Rx402Client({
+  publicClient,
+  asset: deployment.pools.USDG.asset,
+  store: new FileStore('.rx402/wallet.json'),
+  policy,
+  sessions: new IssuerSessions({ url: 'https://issuer.example', agentKey, publicClient, asset: deployment.pools.USDG.asset, store }),
+});
+```
+
+Payments work exactly the same. Session keys are derived from the agent key, and the issuer funds each new session address with a zero-knowledge withdrawal.
+
 `client.fetch` behaves like `fetch`. On a `402 Payment Required` it picks the USDG option on this chain, opens or rotates a session if needed, signs the payment and retries.
 
 If the merchant offers a [stealth address](../../stealth), the payment goes to a fresh one-time address instead of its public `payTo`, so the merchant's side is private too. Pass `stealth: false` to turn this off.
@@ -71,6 +89,7 @@ Circuit artifacts are loaded from the pinned Privacy Pools submodule and checked
 ## Not done yet
 
 - **Leftover session funds** stay at the old session address after rotation. Sweeping them back into the pool is planned.
+- **The mnemonic is the whole pool.** With it in the agent process, a compromised machine can withdraw everything. Use a [session issuer](../../issuer) for agents that run unattended.
 - **The store file holds session private keys.** Keep it as secure as a wallet; each key only controls one session's budget.
 - **Recovery from mnemonic alone** (scanning the chain for past deposits) is not implemented; the store is needed.
 - **Relayer:** `WalletRelayer` relays from a wallet you run. A hosted relayer with fees is the next component.

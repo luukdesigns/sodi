@@ -6,6 +6,7 @@ import {
   FileControls,
   FileStore,
   HttpRelayer,
+  IssuerSessions,
   Rx402Client,
   WithdrawalProver,
   aspAssociationSet,
@@ -38,27 +39,9 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
   });
   const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 
-  const ownerKey = process.env.OWNER_PRIVATE_KEY as Hex | undefined;
-  const ownerWallet = ownerKey
-    ? createWalletClient({ chain, account: privateKeyToAccount(ownerKey), transport: http(rpcUrl) })
-    : undefined;
-
-  const client = new Rx402Client({
+  const common = {
     publicClient,
-    ownerWallet,
-    mnemonic: env('RX402_MNEMONIC'),
-    entrypoint: deployment.contracts.Entrypoint as Address,
-    pool: deployment.pools.USDG.pool as Address,
     asset: deployment.pools.USDG.asset as Address,
-    poolDeploymentBlock: BigInt(deployment.deploymentBlock),
-    relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403'), {
-      chainId: deployment.chainId as number,
-      entrypoint: deployment.contracts.Entrypoint as Address,
-      feeRecipient: process.env.RELAYER_FEE_RECIPIENT as Address | undefined,
-      maxFeeBPS: BigInt(env('RELAYER_MAX_FEE_BPS', '100')),
-    }),
-    prover: new WithdrawalProver(),
-    associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
     stealth: env('RX402_STEALTH', 'true') !== 'false',
     store: new FileStore(env('RX402_STORE', join(homedir(), '.sodi', 'rx402.json'))),
     controls: new FileControls(env('RX402_CONTROLS', join(homedir(), '.sodi', 'controls.json'))),
@@ -68,11 +51,40 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
       maxAgeSeconds: Number(env('RX402_MAX_SESSION_AGE', '3600')),
       maxPaymentAmount: usdg(env('RX402_MAX_PER_REQUEST', '0.10')),
     },
-  });
+  };
+
+  // With a session issuer, this process holds only an agent key: the pool secret stays with the issuer.
+  const issuerUrl = process.env.RX402_ISSUER_URL;
+  let issuer: IssuerSessions | undefined;
+  let client: Rx402Client;
+  if (issuerUrl) {
+    if (process.env.RX402_MNEMONIC) throw new Error('set RX402_ISSUER_URL or RX402_MNEMONIC, not both: the point of an issuer is that the agent never holds the mnemonic');
+    issuer = new IssuerSessions({ url: issuerUrl, agentKey: env('RX402_AGENT_KEY') as Hex, publicClient, asset: common.asset, store: common.store });
+    client = new Rx402Client({ ...common, sessions: issuer });
+  } else {
+    const ownerKey = process.env.OWNER_PRIVATE_KEY as Hex | undefined;
+    client = new Rx402Client({
+      ...common,
+      ownerWallet: ownerKey ? createWalletClient({ chain, account: privateKeyToAccount(ownerKey), transport: http(rpcUrl) }) : undefined,
+      mnemonic: env('RX402_MNEMONIC'),
+      entrypoint: deployment.contracts.Entrypoint as Address,
+      pool: deployment.pools.USDG.pool as Address,
+      poolDeploymentBlock: BigInt(deployment.deploymentBlock),
+      relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403'), {
+        chainId: deployment.chainId as number,
+        entrypoint: deployment.contracts.Entrypoint as Address,
+        feeRecipient: process.env.RELAYER_FEE_RECIPIENT as Address | undefined,
+        maxFeeBPS: BigInt(env('RELAYER_MAX_FEE_BPS', '100')),
+      }),
+      prover: new WithdrawalProver(),
+      associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
+    });
+  }
 
   const options: McpOptions = {
     maxTotalSpend: usdg(env('RX402_MAX_TOTAL_SPEND', '5')),
     allowedHosts: (process.env.RX402_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+    issuer,
   };
   return { client, options };
 }
