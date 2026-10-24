@@ -4,7 +4,12 @@ Logo and brand identity by **Luuk Visser**.
 
 ## Files
 
-Logo files live in this folder (PNG now; SVG and other variants to follow).
+| File | Use on |
+| --- | --- |
+| `sodi-logo-dark.png` | Light backgrounds |
+| `sodi-logo-light.png` | Dark backgrounds |
+
+Both are 800×800 PNGs with transparent backgrounds. SVG versions to follow.
 
 ## Use of the name and logo
 
