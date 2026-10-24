@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { IssuerStatus, Rx402Client } from '@sodi/rx402';
+import type { IssuerStatus, RecycleOutcome, Rx402Client } from '@sodi/rx402';
 import { formatUnits, parseUnits } from 'viem';
 import { z } from 'zod';
 
@@ -13,6 +13,8 @@ export interface McpOptions {
   allowedHosts: string[];
   /** Set when sessions come from a session issuer: the pool and the hard limits live there. */
   issuer?: { status(): Promise<IssuerStatus> };
+  /** Recycles finished sessions into the pool; the tool is offered when set. */
+  recycle?: () => Promise<RecycleOutcome[]>;
 }
 
 const usd = (v: bigint) => formatUnits(v, DECIMALS);
@@ -174,6 +176,35 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
       }
     },
   );
+
+  if (options.recycle) {
+    const recycle = options.recycle;
+    server.registerTool(
+      'rx402_recycle',
+      {
+        title: 'Return leftover funds to the private pool',
+        description:
+          'Moves what is left in finished payment sessions back into the private pool, so no funds are stranded at ' +
+          'old addresses. The current session, and any session that signed a payment in the last 10 minutes, are left ' +
+          'alone. Amounts below the pool minimum are reported as too small. Safe to call at any time.',
+        inputSchema: {},
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      async () => {
+        try {
+          const outcomes = await recycle();
+          return json({
+            recycled: outcomes.filter((o) => o.status === 'recycled').map((o) => ({ session: o.session, amountUsdg: usd(o.amount), tx: o.tx })),
+            tooSmall: outcomes.filter((o) => o.status === 'too-small').map((o) => ({ session: o.session, amountUsdg: usd(o.amount) })),
+            failed: outcomes.filter((o) => o.status === 'failed').map((o) => ({ session: o.session, amountUsdg: usd(o.amount), error: o.error })),
+            note: outcomes.length ? undefined : 'nothing to recycle yet: sessions in use or with recent payments are left alone',
+          });
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
+      },
+    );
+  }
 
   if (client.canDeposit) {
     server.registerTool(

@@ -54,6 +54,14 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
   };
 
   // With a session issuer, this process holds only an agent key: the pool secret stays with the issuer.
+  const relayerUrl = env('RELAYER_URL', 'http://localhost:8403');
+  const relayerTerms = {
+    chainId: deployment.chainId as number,
+    entrypoint: deployment.contracts.Entrypoint as Address,
+    feeRecipient: process.env.RELAYER_FEE_RECIPIENT as Address | undefined,
+    maxFeeBPS: BigInt(env('RELAYER_MAX_FEE_BPS', '100')),
+  };
+  let relayer: HttpRelayer | undefined;
   const issuerUrl = process.env.RX402_ISSUER_URL;
   let issuer: IssuerSessions | undefined;
   let client: Rx402Client;
@@ -70,12 +78,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
       entrypoint: deployment.contracts.Entrypoint as Address,
       pool: deployment.pools.USDG.pool as Address,
       poolDeploymentBlock: BigInt(deployment.deploymentBlock),
-      relayer: await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403'), {
-        chainId: deployment.chainId as number,
-        entrypoint: deployment.contracts.Entrypoint as Address,
-        feeRecipient: process.env.RELAYER_FEE_RECIPIENT as Address | undefined,
-        maxFeeBPS: BigInt(env('RELAYER_MAX_FEE_BPS', '100')),
-      }),
+      relayer: (relayer = await HttpRelayer.connect(relayerUrl, relayerTerms)),
       prover: new WithdrawalProver(),
       associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
     });
@@ -86,5 +89,15 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
     allowedHosts: (process.env.RX402_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
     issuer,
   };
+
+  // Recycling goes through the relayer (connected on first use when sessions come from an issuer).
+  const recycler = (process.env.RX402_RECYCLER ?? deployment.contracts.SodiRecycler) as Address | undefined;
+  if (recycler) {
+    const maxFee = usdg(env('RX402_MAX_RECYCLE_FEE', '0.001'));
+    options.recycle = async () => {
+      relayer ??= await HttpRelayer.connect(relayerUrl, relayerTerms);
+      return client.recycleSessions({ submitter: relayer.recycleSubmitter({ recycler, maxFee }) });
+    };
+  }
   return { client, options };
 }

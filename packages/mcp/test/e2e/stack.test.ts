@@ -47,6 +47,8 @@ const relayerAcct = privateKeyToAccount('0x92db14e403b83dfe3df233f83dfa3a0d7096f
 const facilitatorAcct = privateKeyToAccount('0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356');
 const MERCHANT = '0x000000000000000000000000000000000000cafe' as Address;
 const RELAY_FEE_BPS = 50n; // 0.5%
+const RECYCLE_FEE = 1_000n;
+const artifact = JSON.parse(readFileSync(new URL('../../../../contracts/out/SodiRecycler.sol/SodiRecycler.json', import.meta.url), 'utf8'));
 
 const chain = defineChain({
   id: 46630,
@@ -76,6 +78,7 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
   const servers: { close(): void }[] = [];
   let mcp: Client;
   let call: (name: string, args?: Record<string, unknown>) => Promise<ToolResult>;
+  let offset = 0;
 
   beforeAll(async () => {
     expect(POSTMAN_KEY, 'set POSTMAN_PRIVATE_KEY').toBeTruthy();
@@ -89,6 +92,9 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
     // Approval service API
     servers.push(startAsp(28402, () => aspState, join(dir, 'sets')));
 
+    const deployTx = await wallet(relayerAcct).deployContract({ abi: artifact.abi, bytecode: artifact.bytecode.object, args: [ENTRYPOINT, USDG] });
+    const recycler = (await publicClient.waitForTransactionReceipt({ hash: deployTx })).contractAddress!;
+
     // Relayer service
     const settings = {
       entrypoint: ENTRYPOINT,
@@ -96,6 +102,8 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
       feeRecipient: relayerAcct.address,
       relayFeeBPS: RELAY_FEE_BPS,
       minWithdrawal: 100_000n,
+      recycler,
+      recycleFee: RECYCLE_FEE,
     };
     servers.push(startRelayer(28403, 46630, settings, new RelaySubmitter(publicClient, wallet(relayerAcct), settings)));
 
@@ -110,6 +118,7 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
     });
     servers.push(merchant.server);
 
+    const relayer = await HttpRelayer.connect('http://127.0.0.1:28403');
     const client = new Rx402Client({
       publicClient,
       ownerWallet: wallet(owner),
@@ -118,14 +127,19 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
       pool: POOL,
       asset: USDG,
       poolDeploymentBlock: BigInt(deployment.deploymentBlock),
-      relayer: await HttpRelayer.connect('http://127.0.0.1:28403'),
+      relayer,
       prover: new WithdrawalProver(),
       associationSet: aspAssociationSet('http://127.0.0.1:28402'),
       store: new MemoryStore(),
       policy: { budget: 1_000_000n, maxPayments: 20, maxAgeSeconds: 3600, maxPaymentAmount: 100_000n },
+      now: () => Math.floor(Date.now() / 1000) + offset,
     });
 
-    const server = createSodiMcpServer(client, { maxTotalSpend: 50_000n, allowedHosts: [] });
+    const server = createSodiMcpServer(client, {
+      maxTotalSpend: 50_000n,
+      allowedHosts: [],
+      recycle: () => client.recycleSessions({ submitter: relayer.recycleSubmitter({ recycler, maxFee: 5_000n }) }),
+    });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     mcp = new Client({ name: 'test-agent', version: '1.0.0' });
@@ -140,7 +154,7 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
 
   it('exposes the rx402 tools', async () => {
     const { tools } = await mcp.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['rx402_deposit', 'rx402_fetch', 'rx402_open_session', 'rx402_status']);
+    expect(tools.map((t) => t.name).sort()).toEqual(['rx402_deposit', 'rx402_fetch', 'rx402_open_session', 'rx402_recycle', 'rx402_status']);
   });
 
   it('deposits through the MCP tool, then the approval service approves it', async () => {
@@ -212,4 +226,21 @@ describe('Sodi stack end to end: MCP -> rx402 -> relayer -> pool', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it('recycles a finished session back into the pool through the tool, once it is safe to', async () => {
+    const first = parse(await call('rx402_status')).session.address as Address;
+    // Rotate: the first session is no longer current.
+    parse(await call('rx402_open_session'));
+    const early = parse(await call('rx402_recycle'));
+    expect(early.recycled).toEqual([]);
+    expect(early.note).toMatch(/nothing to recycle yet/);
+
+    offset = 700; // its payment authorizations have expired by now
+    const before = parse(await call('rx402_status')).poolBalanceUsdg;
+    const r = parse(await call('rx402_recycle'));
+    expect(r.recycled).toEqual([{ session: first, amountUsdg: '0.96', tx: expect.any(String) }]);
+    expect(await balance(first)).toBe(0n);
+    expect(Number(parse(await call('rx402_status')).poolBalanceUsdg) - Number(before)).toBeCloseTo(0.959, 6);
+    expect(parse(await call('rx402_recycle')).recycled).toEqual([]);
+  }, 600_000);
 });

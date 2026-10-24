@@ -9,6 +9,7 @@ MCP server that gives AI agents a private wallet for x402 APIs. When a tool call
 | `rx402_fetch` | Fetches a URL. If it costs money (x402), pays privately and returns the response. Optional `max_price_usdg` caps the price for that request. |
 | `rx402_status` | Private balance in the pool, current session, and spending limits. |
 | `rx402_open_session` | Pre-funds a new session ahead of a burst of paid requests (normally automatic). |
+| `rx402_recycle` | Moves what's left in finished sessions back into the pool, through the relayer and the [recycler](../../contracts/README.md#sodirecycler), so nothing is stranded at old addresses. Leaves the current session and any with recently signed payments alone. Offered when a recycler is deployed (it is on testnet). |
 | `rx402_deposit` | Moves the owner's USDG into the pool. Only offered when `OWNER_PRIVATE_KEY` is set. This step is public. |
 
 ## Spending limits
@@ -65,7 +66,9 @@ For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/
 | `RX402_MAX_PAYMENTS_PER_SESSION` | `20` | |
 | `RX402_MAX_SESSION_AGE` | `3600` | seconds |
 | `OWNER_PRIVATE_KEY` | unset | Enables `rx402_deposit` |
+| `RX402_RECYCLER` | from the deployment file | SodiRecycler for `rx402_recycle`; recycles are submitted by the relayer at `RELAYER_URL`, also with a session issuer |
+| `RX402_MAX_RECYCLE_FEE` | `0.001` | USDG; refuse relayers that charge more per recycle |
 
 ## Verified
 
-`test/e2e/run-fork.sh` runs the whole stack on a local fork of Robinhood Chain testnet. An MCP client deposits through the tool, the approval service approves it, and the agent pays an x402 v1 and a v2 API. The session is funded through the HTTP relayer, which takes its 0.5% fee. A per-call price cap and the run spending limit both block payments they should.
+`test/e2e/run-fork.sh` runs the whole stack on a local fork of Robinhood Chain testnet. An MCP client deposits through the tool, the approval service approves it, and the agent pays an x402 v1 and a v2 API. The session is funded through the HTTP relayer, which takes its 0.5% fee. A per-call price cap and the run spending limit both block payments they should. After a rotation, `rx402_recycle` leaves the old session alone while its payments could still be settled, then returns what's left to the pool through the relayer.

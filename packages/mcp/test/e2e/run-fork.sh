@@ -20,4 +20,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
+# The recycle test deploys SodiRecycler from the contracts build.
+[ -f ../../contracts/out/SodiRecycler.sol/SodiRecycler.json ] || (cd ../../contracts && forge build)
+
 FORK_RPC="http://127.0.0.1:$PORT" npx vitest run test/e2e
