@@ -14,6 +14,8 @@ export interface RelayQuote {
   /** Present when the relayer submits recycles. */
   recycler?: Address;
   recycleFee?: string;
+  /** Present when the relayer funds yield-pool sessions. */
+  funder?: Address;
 }
 
 /**
@@ -71,6 +73,20 @@ export class HttpRelayer implements Relayer {
         return body.txHash;
       },
     };
+  }
+
+  /** Yield pool: submits a withdrawal processed by the relayer's SessionFunder. */
+  async fund(withdrawal: Withdrawal, proof: SolidityProof): Promise<Hex> {
+    if (!this.quote.funder) throw new Error('this relayer does not fund yield-pool sessions');
+    if (withdrawal.processooor.toLowerCase() !== this.quote.funder.toLowerCase()) throw new Error(`relayer uses funder ${this.quote.funder}, not ${withdrawal.processooor}`);
+    const res = await fetch(new URL('/fund', this.baseUrl), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ withdrawal, proof }),
+    });
+    const body = (await res.json()) as { txHash?: Hex; error?: string };
+    if (!res.ok || !body.txHash) throw new Error(`relayer rejected the session: ${body.error ?? res.status}`);
+    return body.txHash;
   }
 
   async relay(withdrawal: Withdrawal, proof: SolidityProof, scope: bigint): Promise<Hex> {

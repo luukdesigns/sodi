@@ -41,7 +41,7 @@ const deployment = JSON.parse(readFileSync(new URL('../../../contracts/deploymen
 const ENTRYPOINT = deployment.contracts.Entrypoint as Address;
 const OLD_POOL = deployment.pools.USDG.pool as Address;
 const USDG = deployment.pools.USDG.asset as Address;
-const Y = deployment.yieldPool as { vault: Address; pool: Address; router: Address; block: number };
+const Y = deployment.yieldPool as { vault: Address; pool: Address; router: Address; funder: Address; block: number };
 
 const owner = wallet(need('OWNER_PRIVATE_KEY'));
 const relayerWallet = wallet(need('RELAYER_PRIVATE_KEY'));
@@ -92,8 +92,8 @@ const yieldPool = new PoolWallet({
   ...common,
   ownerWallet: owner,
   pool: Y.pool,
-  asset: Y.vault,
-  router: { address: Y.router, asset: USDG },
+  asset: USDG,
+  yieldPool: { vault: Y.vault, router: Y.router, funder: Y.funder },
   poolDeploymentBlock: BigInt(Y.block),
   store: new FileStore(need('RX402_YIELD_STORE')),
 });

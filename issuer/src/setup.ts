@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { FileStore, HttpRelayer, PoolWallet, WithdrawalProver, aspAssociationSet } from '@sodi/rx402';
+import { FileStore, HttpRelayer, PoolWallet, WithdrawalProver, aspAssociationSet, poolFromDeployment } from '@sodi/rx402';
 import { type Address, type Hex, createPublicClient, createWalletClient, defineChain, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -31,10 +31,8 @@ export async function poolFromEnv(opts: { withRelayer: boolean }) {
     publicClient,
     ownerWallet: ownerKey ? createWalletClient({ chain, account: privateKeyToAccount(ownerKey), transport: http(rpcUrl) }) : undefined,
     mnemonic: env('RX402_MNEMONIC'),
-    entrypoint,
-    pool: deployment.pools.USDG.pool as Address,
-    asset: deployment.pools.USDG.asset as Address,
-    poolDeploymentBlock: BigInt(deployment.deploymentBlock),
+    // POOL=syUSDG funds sessions from the yield pool.
+    ...poolFromDeployment(deployment, env('POOL', 'USDG')),
     relayer: opts.withRelayer
       ? await HttpRelayer.connect(env('RELAYER_URL', 'http://localhost:8403'), {
           chainId: deployment.chainId as number,

@@ -78,9 +78,11 @@ An instance of the audited Privacy Pools contract with syUSDG as its asset. Comm
 
 Turns a withdrawal of shares into a USDG session in one transaction. Privacy Pools lets a contract process a withdrawal directly (`processooor`): the proof commits to it and to its data, and the pool still requires the latest approval root.
 
-1. The agent (or issuer) proves a withdrawal of `n` shares with processooor = SessionFunder and data = (session address, relayer fee recipient, relayer fee, minimum USDG).
+1. The agent (or issuer) proves a withdrawal of `n` shares with processooor = SessionFunder and data = (session address, relayer fee recipient, relayer fee, exact USDG for the session).
 2. The relayer calls `SessionFunder.fund(withdrawal, proof)`. The pool checks everything and sends the shares to the funder.
-3. The funder redeems them, donates the protocol fee, pays the relayer, and sends the rest to the session, or reverts if that's below the minimum.
+3. The funder redeems them and pays the session **exactly** the USDG in the data, pays the relayer, and donates the protocol fee plus whatever the margin left over. If the shares are worth less than the session plus fees, it reverts instead of paying short.
+
+The prover withdraws a 1 basis point margin of extra shares, because the share price moves between proving and landing; the margin goes to depositors. Sessions therefore get round amounts, which also leak less than odd ones. Returning the margin as shares isn't possible: it would be a fraction of a cent, far below the pool's minimum deposit.
 
 The session holds plain USDG, so merchants see what they see today, and the relayer still pays the gas.
 
@@ -160,7 +162,7 @@ Deployed 2026-10-24 (addresses under `yieldPool` in [`deployments/46630.json`](.
 **Wiring, in order:**
 
 1. **Router deposits with screening.** *Done.* The SDK deposits and recycles through the router; the approval service screens the real depositor. Live ([`yield-testnet-live.ts`](../packages/rx402/demo/yield-testnet-live.ts)): the owner deposited through the router, two of the live agent's old-pool notes were withdrawn to fresh addresses and recycled in, and all three were screened against their real depositors and approved.
-2. **The funder endpoint on the relayer and share-sized sessions,** together, since they're one feature: the client, the issuer and the MCP server fund sessions through the funder, with a 1 basis point margin and exact USDG amounts.
+2. **The funder endpoint on the relayer and share-sized sessions,** together, since they're one feature. *Done, proven on the mainnet fork.* The relayer has `POST /fund`; `PoolWallet` sizes withdrawals in shares with a 1 basis point margin; the funder pays sessions exactly their USDG budget and streams what the margin leaves to depositors; the issuer and the MCP server pick the pool from the deployment file (`POOL` / `RX402_POOL=syUSDG`). A full `Rx402Client`, and an agent with only an agent key through a session issuer, paid an x402 merchant from yield-pool sessions with real proofs, and a yield session was recovered from the chain alone (`packages/rx402/test/e2e-mainnet/yield-agent.test.ts`).
 3. **The demo agent on the yield pool,** running for days before the website's proof section changes.
 
 Also planned: a keeper that invests waiting fees on a schedule or above a threshold, so they don't sit idle when deposits are quiet.

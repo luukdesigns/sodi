@@ -8,7 +8,7 @@ import {
   isHex,
 } from 'viem';
 
-import { type RecycleRequest, entrypointAbi, poolAbi, recycleArgs, recyclerAbi } from '@sodi/rx402';
+import { type RecycleRequest, entrypointAbi, funderAbi, poolAbi, recycleArgs, recyclerAbi } from '@sodi/rx402';
 
 export interface RelayerSettings {
   entrypoint: Address;
@@ -25,6 +25,8 @@ export interface RelayerSettings {
   recycler?: Address;
   /** Fee per recycle (asset base units), taken out of the recycled amount. */
   recycleFee?: bigint;
+  /** Yield pool SodiSessionFunder; yield-pool sessions are accepted only when set. */
+  funder?: Address;
 }
 
 export interface RelayRequest {
@@ -143,6 +145,43 @@ export function parseRecycleRequest(body: unknown): RecycleRequest {
   };
 }
 
+export interface FundRequest {
+  withdrawal: { processooor: Address; data: Hex };
+  proof: RelayRequest['proof'];
+}
+
+/** Parses untrusted JSON into a yield-pool session request. */
+export function parseFundRequest(body: unknown): FundRequest {
+  const r = parseRelayRequest({ ...(body as object), scope: '0' });
+  return { withdrawal: r.withdrawal, proof: r.proof };
+}
+
+/**
+ * A yield-pool session on our terms: processed by our funder, our fee recipient, at least our fee, and
+ * not dust. Returns the session address and amount.
+ */
+export function checkFundTerms(req: FundRequest, s: RelayerSettings): { session: Address; amount: bigint } {
+  if (!s.funder) throw new RelayError('this relayer does not fund yield-pool sessions', 404);
+  if (req.withdrawal.processooor.toLowerCase() !== s.funder.toLowerCase()) throw new RelayError('withdrawal must be processed by our session funder');
+  let session: Address;
+  let feeRecipient: Address;
+  let feeBPS: bigint;
+  let amount: bigint;
+  try {
+    [[session, feeRecipient, feeBPS, amount]] = decodeAbiParameters(
+      [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }, { type: 'uint256' }] }],
+      req.withdrawal.data,
+    ) as unknown as [[Address, Address, bigint, bigint]];
+  } catch {
+    throw new RelayError('withdrawal data is not FundingData');
+  }
+  if (feeRecipient.toLowerCase() !== s.feeRecipient.toLowerCase()) throw new RelayError('fee recipient must be this relayer');
+  if (feeBPS < s.relayFeeBPS) throw new RelayError(`relay fee below ${s.relayFeeBPS} bps`);
+  if (amount < s.minWithdrawal) throw new RelayError(`session below minimum of ${s.minWithdrawal}`);
+  if (s.minFee !== undefined && (amount * feeBPS) / 10_000n < s.minFee) throw new RelayError(`fee below the minimum of ${s.minFee}`);
+  return { session, amount };
+}
+
 /** A recycle on our terms: we accept them, our fee recipient, at least our fee. */
 export function checkRecycleTerms(req: RecycleRequest, s: RelayerSettings): void {
   if (!s.recycler) throw new RelayError('this relayer does not submit recycles', 404);
@@ -175,6 +214,14 @@ export class RelaySubmitter {
         args: [req.withdrawal, req.proof, req.scope],
         account: this.wallet.account!,
       }),
+    );
+  }
+
+  submitFund(req: FundRequest): Promise<Hex> {
+    if (!this.settings.funder) throw new RelayError('this relayer does not fund yield-pool sessions', 404);
+    const funder = this.settings.funder;
+    return this.simulateAndSend('session', () =>
+      this.publicClient.simulateContract({ address: funder, abi: funderAbi, functionName: 'fund', args: [req.withdrawal, req.proof], account: this.wallet.account! }),
     );
   }
 

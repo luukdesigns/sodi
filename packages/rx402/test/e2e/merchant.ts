@@ -24,6 +24,8 @@ export function startMerchant(opts: {
   facilitator: WalletClient;
   publicClient: PublicClient;
   prices: Record<string, { amount: bigint; version: 1 | 2 }>;
+  /** Default Robinhood Chain testnet. */
+  chainId?: number;
 }): { server: Server; settlements: Settlement[] } {
   const settlements: Settlement[] = [];
   const server = createServer(async (req, res) => {
@@ -35,7 +37,7 @@ export function startMerchant(opts: {
     }
     const requirement = {
       scheme: 'exact',
-      network: price.version === 2 ? 'eip155:46630' : 'robinhood-testnet',
+      network: price.version === 2 ? `eip155:${opts.chainId ?? 46630}` : (opts.chainId ?? 46630) === 4663 ? 'robinhood' : 'robinhood-testnet',
       asset: opts.asset,
       payTo: opts.payTo,
       maxTimeoutSeconds: 300,

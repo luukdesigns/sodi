@@ -10,6 +10,7 @@ The relayer cannot steal or redirect funds. The recipient, fee recipient and fee
 | --- | --- |
 | `GET /quote` | `{ chainId, entrypoint, feeRecipient, relayFeeBPS, minWithdrawal }`. Clients build their withdrawal with these terms. |
 | `POST /relay` | `{ withdrawal, proof, scope }` → `{ txHash }` |
+| `POST /fund` | `{ withdrawal, proof }` for the yield pool's SessionFunder → `{ txHash }`. Offered when a funder is configured (`FUNDER`, or the deployment file's yield pool); `/quote` then includes `funder`. The funding data must name this relayer as fee recipient with at least its fee. |
 | `POST /recycle` | A signed [SodiRecycler](../contracts/README.md#sodirecycler) authorization → `{ txHash }`. Offered when a recycler is configured; `/quote` then includes `recycler` and `recycleFee`. |
 | `GET /health` | |
 

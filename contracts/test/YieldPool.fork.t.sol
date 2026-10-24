@@ -138,9 +138,15 @@ contract YieldPoolForkTest is Test {
     depositor.ragequit(p);
   }
 
-  function _fundSession(uint256 usdg, uint256 minAssets) internal returns (uint256 shares) {
-    shares = vault.previewWithdraw(usdg);
-    IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, minAssets));
+  /// @dev Withdraws enough shares for `amount` plus fees, with a 1 basis point margin, as the SDK does.
+  function _sharesFor(uint256 amount) internal view returns (uint256) {
+    uint256 need = funder.needed(amount, RELAY_FEE_BPS);
+    return vault.previewWithdraw(need + (need + 9_999) / 10_000);
+  }
+
+  function _fundSession(uint256 amount) internal returns (uint256 shares) {
+    shares = _sharesFor(amount);
+    IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, amount));
     _mockVerifiers();
     vm.prank(relayer);
     funder.fund(w, _proof(w, shares));
@@ -295,8 +301,8 @@ contract YieldPoolForkTest is Test {
     assertEq(STEAK.balanceOf(address(vault)), 0, 'new deposits stay in plain USDG');
 
     _approveRoot('after exit');
-    _fundSession(10e6, 9.9e6);
-    assertGe(USDG.balanceOf(session), 9.9e6, 'sessions are still funded');
+    _fundSession(10e6);
+    assertEq(USDG.balanceOf(session), 10e6, 'sessions are still funded');
   }
 
   function test_InvestingAgainTakesTwoDaysNotice() public {
@@ -341,14 +347,16 @@ contract YieldPoolForkTest is Test {
     _approveRoot('root');
     vm.warp(block.timestamp + 7 days);
 
-    uint256 shares = _fundSession(10e6, 9.9e6);
+    uint256 shares = _fundSession(10e6);
     uint256 got = USDG.balanceOf(session);
     emit log_named_decimal_uint('session received (USDG)', got, 6);
-    assertApproxEqAbs(got, (10e6 * (10_000 - PROTOCOL_FEE_BPS - RELAY_FEE_BPS)) / 10_000, 2);
-    assertApproxEqAbs(USDG.balanceOf(relayer), (10e6 * RELAY_FEE_BPS) / 10_000, 1);
+    assertEq(got, 10e6, 'exactly the amount the proof states');
+    assertEq(USDG.balanceOf(relayer), (10e6 * RELAY_FEE_BPS) / 10_000);
     assertEq(vault.balanceOf(address(pool)), d.shares - shares);
     assertEq(USDG.balanceOf(address(funder)), 0);
-    assertApproxEqAbs(vault.lockedRemaining(), (10e6 * PROTOCOL_FEE_BPS) / 10_000, 1, 'the fee is streaming');
+    // The protocol fee and the unused margin stream to depositors.
+    assertGe(vault.lockedRemaining(), (10e6 * PROTOCOL_FEE_BPS) / 10_000, 'the fee is streaming');
+    assertLe(vault.lockedRemaining(), (10e6 * PROTOCOL_FEE_BPS) / 10_000 + 0.002e6, 'plus at most the margin');
 
     // A week later the fee is in the price of what's left in the pool.
     uint256 left = vault.balanceOf(address(pool));
@@ -357,21 +365,55 @@ contract YieldPoolForkTest is Test {
     assertGt(vault.convertToAssets(left), leftValue + 0.04e6, 'the fee reached the depositors');
   }
 
-  function test_RefusesLessThanTheMinimum() public {
+  function test_RefusesToPayShortWithoutAMargin() public {
     _deposit(saver, 100e6, 1);
     _approveRoot('root');
+    // Shares for the session alone, not its fees: not enough.
     uint256 shares = vault.previewWithdraw(10e6);
     IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, 10e6));
     _mockVerifiers();
     ProofLib.WithdrawProof memory p = _proof(w, shares);
-    vm.expectPartialRevert(SodiSessionFunder.BelowMinimum.selector);
+    vm.expectPartialRevert(SodiSessionFunder.NotEnough.selector);
     funder.fund(w, p);
+  }
+
+  function test_PriceRiseBetweenProvingAndLandingGoesToDepositors() public {
+    _deposit(saver, 100e6, 1);
+    _approveRoot('root');
+    uint256 shares = _sharesFor(10e6);
+    IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, 10e6));
+    _mockVerifiers();
+    ProofLib.WithdrawProof memory p = _proof(w, shares);
+    // The proof sits for a day before it lands: interest raises what the shares are worth.
+    vm.warp(block.timestamp + 1 days);
+    uint256 worth = vault.convertToAssets(shares);
+    vm.prank(relayer);
+    funder.fund(w, p);
+    assertEq(USDG.balanceOf(session), 10e6, 'still exactly the amount');
+    assertEq(USDG.balanceOf(relayer), 0.02e6);
+    assertApproxEqAbs(vault.lockedRemaining(), worth - 10e6 - 0.02e6, 2, 'everything else streams to depositors');
+  }
+
+  function test_PriceDropBetweenProvingAndLandingRefusesInsteadOfPayingShort() public {
+    _deposit(saver, 100e6, 1);
+    _approveRoot('root');
+    uint256 shares = _sharesFor(10e6);
+    IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, 10e6));
+    _mockVerifiers();
+    ProofLib.WithdrawProof memory p = _proof(w, shares);
+    // A 1% loss in the underlying vault before the proof lands, beyond the margin.
+    uint256 held = STEAK.balanceOf(address(vault));
+    vm.prank(address(vault));
+    STEAK.transfer(address(0xdead), held / 100);
+    vm.expectPartialRevert(SodiSessionFunder.NotEnough.selector);
+    funder.fund(w, p);
+    assertEq(USDG.balanceOf(session), 0);
   }
 
   function test_SubmitterCantChangeTheFundingData() public {
     _deposit(saver, 100e6, 1);
     _approveRoot('root');
-    uint256 shares = vault.previewWithdraw(10e6);
+    uint256 shares = _sharesFor(9e6);
     IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(session, relayer, RELAY_FEE_BPS, 9e6));
     _mockVerifiers();
     ProofLib.WithdrawProof memory p = _proof(w, shares);
@@ -422,11 +464,11 @@ contract YieldPoolForkTest is Test {
   function test_RagequitsWhatIsLeftAfterASession() public {
     Dep memory d = _deposit(saver, 100e6, 1);
     _approveRoot('root');
-    uint256 spent = _fundSession(10e6, 9.9e6); // the note now has a change commitment
+    uint256 spent = _fundSession(10e6); // the note now has a change commitment
     ProofLib.RagequitProof memory p;
     p.pubSignals = [uint256(keccak256('new commitment')) % Constants.SNARK_SCALAR_FIELD, uint256(99), d.shares - spent, d.label];
     depositor.ragequit(p);
     emit log_named_decimal_uint('saver got back after a 10 USDG session', USDG.balanceOf(saver), 6);
-    assertApproxEqAbs(USDG.balanceOf(saver), 90e6, 0.01e6, 'the rest of the deposit, in USDG');
+    assertApproxEqAbs(USDG.balanceOf(saver), 100e6 - 10e6 - 0.07e6, 0.01e6, 'the rest of the deposit, in USDG');
   }
 }

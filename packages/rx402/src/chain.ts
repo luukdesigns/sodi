@@ -96,6 +96,7 @@ export async function findWithdrawal(
   fromBlock: bigint,
   spentNullifierHash: bigint,
   chunkSize = 10_000n,
+  funder?: Address,
 ): Promise<FoundWithdrawal | undefined> {
   const head = await client.getBlockNumber({ cacheTime: 0 });
   // Newest first: the spend we are looking for is almost always recent.
@@ -111,12 +112,16 @@ export async function findWithdrawal(
     const relayed = parseEventLogs({ abi: [withdrawalRelayedEvent], logs: receipt.logs }).find(
       (l) => l.address.toLowerCase() === entrypoint.toLowerCase(),
     );
+    // Yield pool: the session funder processed it, and says which session got how much.
+    const funded = funder
+      ? parseEventLogs({ abi: funderAbi, eventName: 'SessionFunded', logs: receipt.logs }).find((l) => l.address.toLowerCase() === funder.toLowerCase())
+      : undefined;
     return {
       value: hit.args._value!,
       newCommitment: hit.args._newCommitment!,
       txHash: hit.transactionHash,
-      recipient: relayed?.args._recipient,
-      received: relayed ? relayed.args._amount! - relayed.args._feeAmount! : undefined,
+      recipient: relayed?.args._recipient ?? funded?.args.session,
+      received: relayed ? relayed.args._amount! - relayed.args._feeAmount! : funded?.args.amount,
     };
   }
   return undefined;
@@ -161,3 +166,17 @@ export async function findRagequit(
   }
   return undefined;
 }
+
+/** The yield pool's SodiSessionFunder. */
+export const funderAbi = parseAbi([
+  'struct Withdrawal { address processooor; bytes data; }',
+  'struct WithdrawProof { uint256[2] pA; uint256[2][2] pB; uint256[2] pC; uint256[8] pubSignals; }',
+  'function fund(Withdrawal w, WithdrawProof proof)',
+  'function needed(uint256 amount, uint256 relayFeeBPS) view returns (uint256)',
+  'event SessionFunded(address indexed session, uint256 shares, uint256 amount, uint256 relayFee, uint256 toDepositors)',
+]);
+
+export const vaultAbi = parseAbi([
+  'function previewWithdraw(uint256 assets) view returns (uint256)',
+  'function convertToAssets(uint256 shares) view returns (uint256)',
+]);

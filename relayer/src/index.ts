@@ -42,6 +42,7 @@ async function main() {
     minFee,
     recycler: (process.env.RECYCLER ?? deployment.contracts.SodiRecycler) as Address | undefined,
     recycleFee: BigInt(process.env.RECYCLE_FEE ?? minFee.toString()),
+    funder: (process.env.FUNDER ?? deployment.yieldPool?.funder) as Address | undefined,
   };
 
   startServer(port, deployment.chainId, settings, new RelaySubmitter(publicClient, wallet, settings), log, {

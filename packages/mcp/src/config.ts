@@ -8,6 +8,7 @@ import {
   HttpRelayer,
   IssuerSessions,
   Rx402Client,
+  poolFromDeployment,
   WithdrawalProver,
   aspAssociationSet,
 } from '@sodi/rx402';
@@ -39,9 +40,11 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
   });
   const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 
+  // RX402_POOL=syUSDG uses the yield pool.
+  const poolSettings = poolFromDeployment(deployment, env('RX402_POOL', 'USDG'));
   const common = {
     publicClient,
-    asset: deployment.pools.USDG.asset as Address,
+    asset: poolSettings.asset,
     stealth: env('RX402_STEALTH', 'true') !== 'false',
     store: new FileStore(env('RX402_STORE', join(homedir(), '.sodi', 'rx402.json'))),
     controls: new FileControls(env('RX402_CONTROLS', join(homedir(), '.sodi', 'controls.json'))),
@@ -75,9 +78,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
       ...common,
       ownerWallet: ownerKey ? createWalletClient({ chain, account: privateKeyToAccount(ownerKey), transport: http(rpcUrl) }) : undefined,
       mnemonic: env('RX402_MNEMONIC'),
-      entrypoint: deployment.contracts.Entrypoint as Address,
-      pool: deployment.pools.USDG.pool as Address,
-      poolDeploymentBlock: BigInt(deployment.deploymentBlock),
+      ...poolSettings,
       relayer: (relayer = await HttpRelayer.connect(relayerUrl, relayerTerms)),
       prover: new WithdrawalProver(),
       associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),

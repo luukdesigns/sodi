@@ -9,6 +9,7 @@ export {
   type SessionSource,
 } from './client.js';
 export { PoolWallet, type Funding, type PoolWalletConfig } from './wallet.js';
+export { poolFromDeployment, type SodiDeployment } from './deployment.js';
 export {
   type RecycleRequest,
   type RecycleSubmitter,
@@ -56,7 +57,7 @@ export {
 } from './controls.js';
 export * from './x402.js';
 export * from './crypto.js';
-export { depositedEvent, entrypointAbi, erc20Abi, poolAbi } from './chain.js';
+export { depositedEvent, entrypointAbi, erc20Abi, funderAbi, poolAbi, vaultAbi } from './chain.js';
 export { HttpRelayer, type RelayQuote } from './http-relayer.js';
 
 /** Fetches approved labels from a Sodi approval service (`GET /association-set`). */

@@ -1,7 +1,7 @@
 import { encodeAbiParameters } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import { RelaySubmitter, type RelayerSettings, checkRecycleTerms, checkTerms, parseRecycleRequest, parseRelayRequest } from '../src/relay.js';
+import { RelaySubmitter, type RelayerSettings, checkFundTerms, checkRecycleTerms, checkTerms, parseFundRequest, parseRecycleRequest, parseRelayRequest } from '../src/relay.js';
 import { startServer } from '../src/server.js';
 
 const ENTRYPOINT = '0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce';
@@ -168,6 +168,54 @@ describe('recycles', () => {
       const quote = (await (await fetch('http://127.0.0.1:18643/quote')).json()) as Record<string, string>;
       expect(quote).toMatchObject({ recycler: RECYCLER, recycleFee: '2000' });
       expect(await (await fetch('http://127.0.0.1:18642/quote')).json()).not.toHaveProperty('recycler');
+    } finally {
+      off.close();
+      on.close();
+    }
+  });
+});
+
+describe('yield-pool sessions', () => {
+  const FUNDER = '0x00000000000000000000000000000000000000fd';
+  const withFunder: RelayerSettings = { ...settings, funder: FUNDER, minFee: 0n };
+  const fundingData = (feeRecipient: string, bps: bigint, amount: bigint) =>
+    encodeAbiParameters(
+      [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }, { type: 'uint256' }] }],
+      [[SESSION, feeRecipient as `0x${string}`, bps, amount]],
+    );
+  const fundBody = (over: { processooor?: string; data?: string } = {}) => {
+    const b = body({ processooor: over.processooor ?? FUNDER, data: over.data ?? fundingData(RELAYER, 50n, 1_000_000n) });
+    return { withdrawal: b.withdrawal, proof: b.proof };
+  };
+
+  it('accepts a session on our terms', () => {
+    const r = checkFundTerms(parseFundRequest(fundBody()), withFunder);
+    expect(r.session.toLowerCase()).toBe(SESSION);
+    expect(r.amount).toBe(1_000_000n);
+  });
+
+  it.each([
+    ['another processor', { processooor: RELAYER }, /our session funder/],
+    ['someone else as fee recipient', { data: fundingData(SESSION, 50n, 1_000_000n) }, /fee recipient/],
+    ['a fee below ours', { data: fundingData(RELAYER, 10n, 1_000_000n) }, /relay fee below/],
+    ['a dust session', { data: fundingData(RELAYER, 50n, 99_999n) }, /below minimum/],
+    ['data that is not FundingData', { data: '0x1234' }, /not FundingData/],
+  ])('rejects %s', (_, over, msg) => {
+    expect(() => checkFundTerms(parseFundRequest(fundBody(over)), withFunder)).toThrow(msg);
+  });
+
+  it('refuses sessions unless a funder is configured, and quotes it when it is', async () => {
+    expect(() => checkFundTerms(parseFundRequest(fundBody()), settings)).toThrow(/does not fund/);
+    const submitter = { submitFund: async () => '0xf00d' } as never;
+    const off = startServer(18652, 46630, settings, submitter, () => {}, { host: '127.0.0.1' });
+    const on = startServer(18653, 46630, withFunder, submitter, () => {}, { host: '127.0.0.1' });
+    try {
+      const post = (port: number) => fetch(`http://127.0.0.1:${port}/fund`, { method: 'POST', body: JSON.stringify(fundBody()) });
+      expect((await post(18652)).status).toBe(404);
+      const ok = await post(18653);
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ txHash: '0xf00d' });
+      expect(await (await fetch('http://127.0.0.1:18653/quote')).json()).toMatchObject({ funder: FUNDER });
     } finally {
       off.close();
       on.close();

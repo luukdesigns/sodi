@@ -23,4 +23,4 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-FORK_RPC="http://127.0.0.1:$PORT" npx vitest run test/e2e-mainnet
+FORK_RPC="http://127.0.0.1:$PORT" npx vitest run ${TESTS:-test/e2e-mainnet/} --no-file-parallelism

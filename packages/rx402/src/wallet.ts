@@ -3,7 +3,7 @@ import { type Address, type Hex, type LocalAccount, type PublicClient, type Wall
 const routerAbi = parseAbi(['function deposit(uint256 assets, uint256 precommitment) returns (uint256 commitment)']);
 import { privateKeyToAccount } from 'viem/accounts';
 
-import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findRagequit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
+import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findRagequit, findWithdrawal, funderAbi, latestAspRoot, poolAbi, stateTreeLeaves, vaultAbi } from './chain.js';
 import {
   type MasterKeys,
   type Withdrawal,
@@ -30,13 +30,14 @@ export interface PoolWalletConfig {
   mnemonic: string;
   entrypoint: Address;
   pool: Address;
-  /** The pool's asset: USDG, or for the yield pool, the yield vault's share. */
+  /** USDG: what goes in and what sessions receive. */
   asset: Address;
   /**
-   * Yield pool: deposits go through the router (SodiYieldDepositor) in `asset`, usually USDG, because
-   * the pool's own asset, the yield vault's share, only exists inside the pool.
+   * The yield pool. Its asset is the yield vault's share, which only exists inside the pool, so
+   * deposits go in as USDG through the router and sessions come out as USDG through the funder.
+   * Notes and withdrawals are then counted in shares; session budgets stay in USDG.
    */
-  router?: { address: Address; asset: Address };
+  yieldPool?: { vault: Address; router: Address; funder: Address };
   /** Block the pool was deployed at, where state-tree scanning starts. */
   poolDeploymentBlock: bigint;
   relayer: Relayer;
@@ -96,10 +97,8 @@ export class PoolWallet {
     return run;
   }
 
-  /** The token that goes in and comes out: USDG for both pools. */
-  private get fundsAsset(): Address {
-    return this.config.router?.asset ?? this.config.asset;
-  }
+  /** Margin of extra shares withdrawn for a yield-pool session, so price drift can't leave it short. */
+  static readonly YIELD_MARGIN_BPS = 1n;
 
   get canDeposit(): boolean {
     return Boolean(this.config.ownerWallet?.account);
@@ -131,8 +130,8 @@ export class PoolWallet {
     state.depositCounts[scope.toString()] = index + 1;
     store.save(state);
 
-    const router = this.config.router;
-    const token = router ? router.asset : asset;
+    const router = this.config.yieldPool ? { address: this.config.yieldPool.router } : undefined;
+    const token = asset;
     const spender = router ? router.address : entrypoint;
     const allowance = await publicClient.readContract({
       address: token,
@@ -229,8 +228,7 @@ export class PoolWallet {
    */
   recycle(account: LocalAccount, submitter: RecycleSubmitter, opts: { domain?: TokenDomain; value?: bigint } = {}): Promise<PoolNote> {
     return this.exclusive(async () => {
-      const { publicClient, store, pool } = this.config;
-      const asset = this.fundsAsset;
+      const { publicClient, store, pool, asset } = this.config;
       const value = opts.value ?? (await publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [account.address] }));
       if (value === 0n) throw new Error(`${account.address} holds nothing to recycle`);
       const scope = await this.getScope();
@@ -295,7 +293,7 @@ export class PoolWallet {
         const existing = this.noteSecrets(note);
         const spent = await publicClient.readContract({ address: pool, abi: poolAbi, functionName: 'nullifierHashes', args: [nullifierHash(existing.nullifier)] });
         if (!spent) break;
-        const w = await findWithdrawal(publicClient, pool, entrypoint, poolDeploymentBlock, nullifierHash(existing.nullifier));
+        const w = await findWithdrawal(publicClient, pool, entrypoint, poolDeploymentBlock, nullifierHash(existing.nullifier), 10_000n, this.config.yieldPool?.funder);
         if (!w) {
           // Not withdrawn: ragequit, then. Nothing is left of the deposit.
           const r = await findRagequit(publicClient, pool, poolDeploymentBlock, commitmentHash(BigInt(note.value), label, existing));
@@ -407,12 +405,23 @@ export class PoolWallet {
     const recovered = await this.recoverDeposits(state);
     if ((await this.syncNotes(state)).length || recovered) store.save(state);
 
+    // Yield pool: `budget` is the USDG the session gets. Withdraw enough shares for it plus the fees,
+    // with a small margin for the share price moving before the proof lands; the funder pays exactly
+    // `budget` and the margin left over goes to depositors.
+    const yp = custom ? undefined : this.config.yieldPool;
+    let withdrawn = budget;
+    if (yp) {
+      const need = await publicClient.readContract({ address: yp.funder, abi: funderAbi, functionName: 'needed', args: [budget, relayer.relayFeeBPS] });
+      const withMargin = need + (need * PoolWallet.YIELD_MARGIN_BPS + 9_999n) / 10_000n;
+      withdrawn = await publicClient.readContract({ address: yp.vault, abi: vaultAbi, functionName: 'previewWithdraw', args: [withMargin] });
+    }
+
     const approved = await this.config.associationSet();
     const approvedSet = new Set(approved.map(String));
-    const note = state.notes.find((n) => BigInt(n.value) >= budget && approvedSet.has(n.label));
+    const note = state.notes.find((n) => BigInt(n.value) >= withdrawn && approvedSet.has(n.label));
     if (!note) {
-      const any = state.notes.some((n) => BigInt(n.value) >= budget);
-      throw new Error(any ? 'no approved pool deposit yet; wait for the approval service' : `no pool deposit with at least ${budget} available; deposit more`);
+      const any = state.notes.some((n) => BigInt(n.value) >= withdrawn);
+      throw new Error(any ? 'no approved pool deposit yet; wait for the approval service' : `no pool deposit with at least ${withdrawn} available; deposit more`);
     }
 
     const scope = await this.getScope();
@@ -434,7 +443,16 @@ export class PoolWallet {
     const target = recipient ?? privateKeyToAccount(sessionPrivateKey(this.keys, label, BigInt(spendIndex))).address;
     const withdrawal: Withdrawal = custom
       ? { processooor: custom.processooor, data: custom.data }
-      : {
+      : yp
+        ? {
+            processooor: yp.funder,
+            // SodiSessionFunder.FundingData: session, relayer fee recipient, relayer fee, exact amount
+            data: encodeAbiParameters(
+              [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }, { type: 'uint256' }] }],
+              [[target, relayer.feeRecipient, relayer.relayFeeBPS, budget]],
+            ),
+          }
+        : {
           processooor: entrypoint,
           data: encodeAbiParameters(
             [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }] }],
@@ -443,7 +461,7 @@ export class PoolWallet {
         };
 
     const { proof } = await prover.prove({
-      withdrawnValue: budget,
+      withdrawnValue: withdrawn,
       stateProof,
       aspProof,
       context: withdrawalContext(withdrawal, scope),
@@ -456,7 +474,12 @@ export class PoolWallet {
     // Nothing is saved until the chain confirms the withdrawal, whatever the relayer reports.
     let relayError: unknown;
     try {
-      const hash = custom ? await custom.submit(withdrawal, proof) : await relayer.relay(withdrawal, proof, scope);
+      let hash: Hex;
+      if (custom) hash = await custom.submit(withdrawal, proof);
+      else if (yp) {
+        if (!relayer.fund) throw new Error('this relayer cannot fund yield-pool sessions');
+        hash = await relayer.fund(withdrawal, proof);
+      } else hash = await relayer.relay(withdrawal, proof, scope);
       await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 }).catch(() => undefined);
     } catch (err) {
       relayError = err;
