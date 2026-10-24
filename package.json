@@ -1,5 +1,6 @@
 {
   "name": "sodi",
+  "homepage": "https://sodi.network",
   "private": true,
   "description": "Privacy-first infrastructure for agentic finance. Home of rx402.",
   "license": "Apache-2.0",
