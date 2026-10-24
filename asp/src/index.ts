@@ -13,6 +13,8 @@ async function main() {
   const { deployment } = config;
   const entrypoint = deployment.contracts.Entrypoint;
   const pools = Object.values(deployment.pools).map((p) => p.pool as Address);
+  // Deposits through these are screened against the real depositor named in their events.
+  const forwarders = deployment.forwarders ?? [deployment.contracts.SodiRecycler, deployment.contracts.SodiYieldDepositor].filter((a): a is Address => !!a);
   const { publicClient, walletClient } = makeClients(deployment.chainId, config.rpcUrl, config.postmanKey);
 
   const chainId = await publicClient.getChainId();
@@ -40,10 +42,12 @@ async function main() {
       walletClient,
       entrypoint,
       pools,
+      forwarders,
       policy: {
         blockedAddresses: new Set(blocklist.addresses.map((a) => a.toLowerCase())),
         deniedLabels: new Set(blocklist.labels),
         vettingDelaySeconds: config.vettingDelaySeconds,
+        allowedContracts: new Set(blocklist.allowedContracts.map((a) => a.toLowerCase())),
       },
       state,
       stateFile: config.stateFile,

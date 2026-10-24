@@ -11,8 +11,9 @@
   },
   "scripts": {
     "test": "vitest run test/unit",
-    "test:e2e": "vitest run test/e2e",
-    "typecheck": "tsc --noEmit"
+    "test:e2e": "vitest run test/e2e/",
+    "typecheck": "tsc --noEmit",
+    "test:e2e-mainnet": "vitest run test/e2e-mainnet/"
   },
   "dependencies": {
     "@sodi/stealth": "*",

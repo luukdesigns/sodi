@@ -198,7 +198,10 @@ export class RelaySubmitter {
         const reason = err instanceof Error ? (err as { shortMessage?: string }).shortMessage ?? err.message : String(err);
         throw new RelayError(`${what} would revert: ${reason}`, 422);
       }
-      const send = this.sending.then(() => this.wallet.writeContract({ ...request, account, chain: this.wallet.chain }));
+      // Estimates for calls into ERC-4626 vaults (Morpho, via recycles and the yield funder) can come in
+      // too tight; leave headroom.
+      const gas = ((await this.publicClient.estimateContractGas({ ...request, account })) * 13n) / 10n;
+      const send = this.sending.then(() => this.wallet.writeContract({ ...request, gas, account, chain: this.wallet.chain }));
       this.sending = send.catch(() => {});
       const hash = await send;
       const receipt = await this.publicClient.waitForTransactionReceipt({ hash });

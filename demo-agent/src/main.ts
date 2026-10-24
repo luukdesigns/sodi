@@ -61,6 +61,7 @@ const approve = () =>
     walletClient: postman,
     entrypoint: ENTRYPOINT,
     pools: [POOL],
+    forwarders: deployment.forwarders ?? [deployment.contracts.SodiRecycler].filter(Boolean),
     policy: { blockedAddresses: new Set(), deniedLabels: new Set(), vettingDelaySeconds: 0 },
     state: aspState,
     stateFile: join(aspDir, 'state.json'),

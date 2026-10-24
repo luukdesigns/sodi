@@ -140,3 +140,24 @@ export async function findDeposit(
   }
   return undefined;
 }
+
+export const ragequitEvent = parseAbiItem('event Ragequit(address indexed _ragequitter, uint256 _commitment, uint256 _label, uint256 _value)');
+
+/** Finds the ragequit of `commitment`, if there was one. */
+export async function findRagequit(
+  client: PublicClient,
+  pool: Address,
+  fromBlock: bigint,
+  commitment: bigint,
+  chunkSize = 10_000n,
+): Promise<{ value: bigint; txHash: Hex } | undefined> {
+  const head = await client.getBlockNumber({ cacheTime: 0 });
+  for (let end = head; end >= fromBlock; end -= chunkSize) {
+    const start = end - chunkSize + 1n > fromBlock ? end - chunkSize + 1n : fromBlock;
+    const logs = await client.getLogs({ address: pool, event: ragequitEvent, fromBlock: start, toBlock: end });
+    const hit = logs.find((l) => l.args._commitment === commitment);
+    if (hit) return { value: hit.args._value!, txHash: hit.transactionHash };
+    if (start === fromBlock) break;
+  }
+  return undefined;
+}

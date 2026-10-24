@@ -5,9 +5,11 @@ import {IERC20} from '@oz/token/ERC20/IERC20.sol';
 import {SafeERC20} from '@oz/token/ERC20/utils/SafeERC20.sol';
 import {ReentrancyGuard} from '@oz/utils/ReentrancyGuard.sol';
 
+import {Constants} from 'contracts/lib/Constants.sol';
 import {ProofLib} from 'contracts/lib/ProofLib.sol';
 import {IEntrypoint} from 'interfaces/IEntrypoint.sol';
 import {IPrivacyPool} from 'interfaces/IPrivacyPool.sol';
+import {IState} from 'interfaces/IState.sol';
 
 interface IERC3009Receive {
   function receiveWithAuthorization(
@@ -46,7 +48,9 @@ contract SodiRecycler is ReentrancyGuard {
   IERC20 public immutable asset;
 
   /// @notice Where a ragequit of each recycled deposit sends the funds: the address they came from.
-  mapping(uint256 commitment => address from) public refundTo;
+  ///         Keyed by the deposit's label, which stays the same when part of it is withdrawn and the
+  ///         commitment changes.
+  mapping(uint256 label => address from) public refundTo;
 
   struct Authorization {
     address from;
@@ -64,7 +68,7 @@ contract SodiRecycler is ReentrancyGuard {
 
   error NonceMismatch();
   error FeeTooHigh();
-  error UnknownCommitment();
+  error UnknownLabel();
 
   constructor(IEntrypoint entrypoint_, IERC20 asset_) {
     entrypoint = entrypoint_;
@@ -95,23 +99,30 @@ contract SodiRecycler is ReentrancyGuard {
     uint256 amount = a.value - fee;
     asset.forceApprove(address(entrypoint), amount);
     commitment = entrypoint.deposit(asset, amount, precommitment);
-    refundTo[commitment] = a.from;
+    refundTo[_lastLabel()] = a.from;
     emit Recycled(a.from, commitment, amount, fee, feeRecipient);
   }
 
-  /// @notice Ragequits a recycled deposit and sends the funds back to the address they came from.
-  ///         Anyone may submit it: the proof needs the deposit's secrets, and the destination is fixed.
+  /// @notice Ragequits a recycled deposit (or what's left of it) and sends the funds back to the address
+  ///         they came from. Anyone may submit it: the proof needs the deposit's secrets, and the
+  ///         destination is fixed.
   function ragequit(ProofLib.RagequitProof calldata proof) external nonReentrant {
-    uint256 commitment = proof.pubSignals[0];
-    address to = refundTo[commitment];
-    if (to == address(0)) revert UnknownCommitment();
-    delete refundTo[commitment];
+    uint256 label = proof.pubSignals[3];
+    address to = refundTo[label];
+    if (to == address(0)) revert UnknownLabel();
+    delete refundTo[label];
 
     (IPrivacyPool pool,,,) = entrypoint.assetConfig(asset);
     uint256 before = asset.balanceOf(address(this));
     pool.ragequit(proof);
     uint256 received = asset.balanceOf(address(this)) - before;
     asset.safeTransfer(to, received);
-    emit Refunded(to, commitment, received);
+    emit Refunded(to, proof.pubSignals[0], received);
+  }
+
+  /// @dev The label the pool gave the deposit just made, computed exactly as the pool does.
+  function _lastLabel() internal view returns (uint256) {
+    (IPrivacyPool pool,,,) = entrypoint.assetConfig(asset);
+    return uint256(keccak256(abi.encodePacked(pool.SCOPE(), IState(address(pool)).nonce()))) % Constants.SNARK_SCALAR_FIELD;
   }
 }

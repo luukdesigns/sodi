@@ -46,7 +46,7 @@ forge test
 | WithdrawalVerifier | `0x2740523E66d4a74002B8e11c839AbbF86A084c71` |
 | CommitmentVerifier | `0x58E37acaf8B2B2f61c3A65E1db59A7dEcb879061` |
 | USDG (asset) | `0x7E955252E15c84f5768B83c41a71F9eba181802F` |
-| SodiRecycler | [`0x2302B8751FC074F2fF7f3642d84be36438EF37AF`](https://explorer.testnet.chain.robinhood.com/address/0x2302B8751FC074F2fF7f3642d84be36438EF37AF) |
+| SodiRecycler | [`0x9727252654cbB19A057a5e052aCbAdd3F33e1055`](https://explorer.testnet.chain.robinhood.com/address/0x9727252654cbB19A057a5e052aCbAdd3F33e1055) (the first, `0x2302…37AF`, is superseded: see below) |
 
 Owner and postman are the testnet deployer, `0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d`. Full details in [`deployments/46630.json`](./deployments/46630.json); transaction logs in `broadcast/`.
 
@@ -56,6 +56,8 @@ Puts funds left at an address back into the pool: an rx402 session that has rota
 
 - The address signs an EIP-3009 `ReceiveWithAuthorization` paying the recycler, whose nonce commits to the new deposit's precommitment and the submitter's fee. Only the recycler can execute it, and only with that deposit, so whoever submits it (a [relayer](../relayer), usually) the funds can only become the deposit the owner chose.
 - The pool records the recycler as the depositor, so the recycler also forwards ragequits, and a ragequit can only send the funds back to the address they came from.
+- Ragequit refunds are keyed by the deposit's **label**, which stays the same when part of the deposit is withdrawn. The first deployment keyed them by commitment, so a recycled deposit couldn't be ragequit through it after a partial withdrawal (it could still be withdrawn privately); it was replaced on 2026-10-24.
+- The approval service screens the address the funds came from, named in the recycler's `Recycled` event, not the recycler.
 - No owner, nothing held between calls. Amounts below the pool's minimum deposit can't be recycled.
 
 Tests (`forge test --match-contract SodiRecycler`), against a full local deployment of the pool: recycling with a fee, a front-runner swapping the deposit, a submitter raising its fee, moving the funds around the recycler, replays, dust below the minimum, and ragequits (with the ragequit verifier mocked). The [issuer's fork test](../issuer/test/e2e/recycle.test.ts) recycles real sessions through the relayer on a testnet fork.

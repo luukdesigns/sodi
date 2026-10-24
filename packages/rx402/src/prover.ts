@@ -116,3 +116,63 @@ export class WithdrawalProver {
     };
   }
 }
+
+/** SHA-256 of the commitment (ragequit) circuit artifacts, from the same 0xbow manifest. */
+export const COMMITMENT_ARTIFACT_HASHES = {
+  wasm: '254d2130607182fd6fd1aee67971526b13cfe178c88e360da96dce92663828d8',
+  zkey: '494ae92d64098fda2a5649690ddc5821fcd7449ca5fe8ef99ee7447544d7e1f3',
+  vkey: '7d48b4eb3dedc12fb774348287b587f0c18c3c7254cd60e9cf0f8b3636a570d8',
+} as const;
+
+export function defaultCommitmentArtifactPaths(): ArtifactPaths {
+  const circuits = resolve(import.meta.dirname, '../../../contracts/lib/privacy-pools-core/packages/circuits');
+  return {
+    wasm: resolve(circuits, 'build/commitment/commitment_js/commitment.wasm'),
+    zkey: resolve(circuits, 'trusted-setup/final-keys/commitment.zkey'),
+    vkey: resolve(circuits, 'trusted-setup/final-keys/commitment.vkey'),
+  };
+}
+
+/** Proof in the shape `ProofLib.RagequitProof` expects: [commitment, nullifierHash, value, label]. */
+export interface RagequitSolidityProof {
+  pA: [Hex, Hex];
+  pB: [[Hex, Hex], [Hex, Hex]];
+  pC: [Hex, Hex];
+  pubSignals: [Hex, Hex, Hex, Hex];
+}
+
+/**
+ * Proves knowledge of a commitment's secrets for a ragequit: the public exit that returns a deposit
+ * (or what's left of it) to its original depositor, without a relayer or the approval service.
+ */
+export class RagequitProver {
+  private wasm: Uint8Array;
+  private zkey: Uint8Array;
+  private vkey: unknown;
+
+  constructor(paths: ArtifactPaths = defaultCommitmentArtifactPaths()) {
+    this.wasm = loadVerified(paths.wasm, COMMITMENT_ARTIFACT_HASHES.wasm);
+    this.zkey = loadVerified(paths.zkey, COMMITMENT_ARTIFACT_HASHES.zkey);
+    this.vkey = JSON.parse(new TextDecoder().decode(loadVerified(paths.vkey, COMMITMENT_ARTIFACT_HASHES.vkey)));
+  }
+
+  async prove(i: { value: bigint; label: bigint; secrets: Secrets }): Promise<{ proof: RagequitSolidityProof; publicSignals: string[] }> {
+    const input = { value: i.value, label: i.label, nullifier: i.secrets.nullifier, secret: i.secrets.secret };
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, this.wasm, this.zkey);
+    if (!(await snarkjs.groth16.verify(this.vkey, publicSignals, proof))) {
+      throw new Error('generated ragequit proof failed local verification');
+    }
+    return {
+      publicSignals,
+      proof: {
+        pA: [hex(proof.pi_a[0]), hex(proof.pi_a[1])],
+        pB: [
+          [hex(proof.pi_b[0][1]), hex(proof.pi_b[0][0])],
+          [hex(proof.pi_b[1][1]), hex(proof.pi_b[1][0])],
+        ],
+        pC: [hex(proof.pi_c[0]), hex(proof.pi_c[1])],
+        pubSignals: publicSignals.map(hex) as RagequitSolidityProof['pubSignals'],
+      },
+    };
+  }
+}

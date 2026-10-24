@@ -63,7 +63,12 @@ The only way in. It takes USDG, mints shares and deposits them into the pool in 
 - `deposit(assets, precommitment)` from a wallet that approved it;
 - `recycle(...)`: gasless, from an EIP-3009 authorization whose nonce commits to the precommitment and the submitter's fee. Same interface as the SodiRecycler, so the rx402 SDK recycles into the yield pool unchanged.
 
-The pool records the router as depositor, so the router forwards ragequits: it redeems the shares and sends the USDG back to the address that deposited, never anywhere else.
+The pool records the router as depositor, so:
+
+- **The approval service screens the real depositor**, named in the router's own event for the same commitment, not the router. A router deposit without that event is denied, and so is a contract calling the router (it could be depositing for others). Without this, every deposit would look like the router's and the screening would pass everything while appearing to work.
+- **The router forwards ragequits:** it redeems the shares and sends the USDG back to the address that deposited, never anywhere else. Refunds are keyed by the deposit's label, so what's left after sessions can still be ragequit. It's the one way out without a relayer, so it is tested with real ragequit proofs.
+
+The router is small, immutable and holds nothing between calls, but every deposit goes through it: it is in the audit scope from the start.
 
 ### The pool (unchanged)
 

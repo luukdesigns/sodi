@@ -6,6 +6,7 @@ const deposit = (over: Partial<DepositRecord> = {}): DepositRecord => ({
   pool: '0xpool',
   label: '111',
   depositor: '0xabc',
+  kind: 'eoa',
   value: '1000000',
   commitment: '1',
   blockNumber: 10,
@@ -63,5 +64,23 @@ describe('approvedLabels', () => {
       deposit({ label: '7', blockNumber: 5, status: 'denied' }),
     ]);
     expect(labels).toEqual([1n, 2n, 3n]);
+  });
+
+  it('screens the real depositor behind a forwarder, and names the forwarder', () => {
+    const r = screen(deposit({ depositor: '0xabc', kind: 'forwarded', via: '0xrouter' }), policy({ blockedAddresses: new Set(['0xabc']) }), 9_999);
+    expect(r).toEqual({ status: 'denied', reason: 'depositor (through 0xrouter) is on the block list' });
+  });
+
+  it('denies a forwarded deposit whose real depositor is unknown', () => {
+    expect(screen(deposit({ depositor: '0xrouter', kind: 'unresolved', via: '0xrouter' }), policy(), 9_999).status).toBe('denied');
+  });
+
+  it('denies contract depositors unless allowed', () => {
+    expect(screen(deposit({ kind: 'contract' }), policy(), 9_999).status).toBe('denied');
+    expect(screen(deposit({ kind: 'contract' }), policy({ allowedContracts: new Set(['0xabc']) }), 9_999).status).toBe('approved');
+  });
+
+  it("keeps a deposit pending until it's known who made it", () => {
+    expect(screen(deposit({ kind: undefined }), policy(), 9_999).status).toBe('pending');
   });
 });

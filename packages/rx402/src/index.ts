@@ -35,7 +35,15 @@ export {
   parseIssuerRequest,
 } from './issuer.js';
 export { WalletRelayer, type Relayer } from './relayer.js';
-export { WithdrawalProver, defaultArtifactPaths, type ArtifactPaths } from './prover.js';
+export {
+  RagequitProver,
+  WithdrawalProver,
+  defaultArtifactPaths,
+  defaultCommitmentArtifactPaths,
+  type ArtifactPaths,
+  type RagequitSolidityProof,
+  type SolidityProof,
+} from './prover.js';
 export { FileStore, MemoryStore, type Grant, type PaymentRecord, type PoolNote, type Session, type Store, type WalletState } from './store.js';
 export {
   type BlockReason,

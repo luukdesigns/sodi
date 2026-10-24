@@ -33,7 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer as startAsp } from '../../../../asp/src/server.js';
 import { runCycle } from '../../../../asp/src/service.js';
 import type { ServiceState } from '../../../../asp/src/state.js';
-import { MemoryStore, PoolWallet, USDG_DOMAIN, WalletRecycleSubmitter, WithdrawalProver, aspAssociationSet, recycleFrom } from '../../src/index.js';
+import { MemoryStore, PoolWallet, RagequitProver, USDG_DOMAIN, WalletRecycleSubmitter, WithdrawalProver, aspAssociationSet, recycleFrom } from '../../src/index.js';
 
 const RPC = process.env.FORK_RPC ?? 'http://127.0.0.1:8545';
 const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168' as Address;
@@ -75,7 +75,12 @@ const vaultAbi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function approve(address,uint256) returns (bool)',
 ]);
-const routerAbi = parseAbi(['function deposit(uint256 assets, uint256 precommitment) returns (uint256)']);
+const routerAbi = parseAbi([
+  'function deposit(uint256 assets, uint256 precommitment) returns (uint256)',
+  'struct RagequitProof { uint256[2] pA; uint256[2][2] pB; uint256[2] pC; uint256[4] pubSignals; }',
+  'function ragequit(RagequitProof proof)',
+]);
+const blocked = privateKeyToAccount('0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a');
 const funderAbi = parseAbi([
   'struct Withdrawal { address processooor; bytes data; }',
   'struct WithdrawProof { uint256[2] pA; uint256[2][2] pB; uint256[2] pC; uint256[8] pubSignals; }',
@@ -117,7 +122,8 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
       walletClient: wallet(postman) as never,
       entrypoint,
       pools: [pool],
-      policy: { blockedAddresses: new Set(), deniedLabels: new Set(), vettingDelaySeconds: 0 },
+      forwarders: [router], // every deposit comes through the router; screen the real depositor
+      policy: { blockedAddresses: new Set([blocked.address.toLowerCase()]), deniedLabels: new Set(), vettingDelaySeconds: 0 },
       state: aspState,
       stateFile: join(aspDir, 'state.json'),
       setsDir: join(aspDir, 'sets'),
@@ -180,7 +186,7 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     await testClient.impersonateAccount({ address: STEAK });
     await testClient.setBalance({ address: STEAK, value: 10n ** 18n });
     const steak = createWalletClient({ chain, account: STEAK, transport: http(RPC) });
-    for (const [to, amount] of [[deployer.address, 1_000_000n], [owner.address, 1_000_000_000n]] as const) {
+    for (const [to, amount] of [[deployer.address, 1_000_000n], [owner.address, 1_000_000_000n], [blocked.address, 50_000_000n]] as const) {
       await publicClient.waitForTransactionReceipt({ hash: await steak.writeContract({ address: USDG, abi: erc20, functionName: 'transfer', args: [to, amount] }) });
     }
     // Wire the only holders of shares, with the seed deposit (never withdrawn).
@@ -217,6 +223,17 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     expect(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [pool] })).toBe(ownerShares);
     expect(await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [owner.address] })).toBe(0n);
     await approve();
+    // The approval service screened the owner, not the router.
+    expect(aspState.deposits[0]).toMatchObject({ status: 'approved', kind: 'forwarded', depositor: owner.address.toLowerCase(), via: router.toLowerCase() });
+  }, 300_000);
+
+  it('denies a blocklisted depositor who goes through the router', async () => {
+    await send(blocked, USDG, erc20, 'approve', [router, 50_000_000n]);
+    await send(blocked, router, routerAbi, 'deposit', [50_000_000n, 424242n]);
+    await approve();
+    const d = aspState.deposits.find((x) => x.depositor === blocked.address.toLowerCase())!;
+    expect(d).toMatchObject({ status: 'denied', kind: 'forwarded', via: router.toLowerCase() });
+    expect(aspState.deposits.filter((x) => x.status === 'approved')).toHaveLength(1);
   }, 300_000);
 
   it('earns Morpho interest while it sits in the pool, with no transaction', async () => {
@@ -291,5 +308,26 @@ describe('yield pool prototype with real proofs on a mainnet fork', () => {
     await poolWallet.sync();
     expect(store.load().notes).toHaveLength(before + 1);
     console.log(`   recycled ${Number(left) / 1e6} USDG into the yield pool in ${tx}`);
+  }, 300_000);
+
+  it("ragequits what's left of the deposit through the router, with a real proof, back to the owner in USDG", async () => {
+    const note = store.load().notes[0]!;
+    const left = await publicClient.readContract({ address: vault, abi: vaultAbi, functionName: 'convertToAssets', args: [BigInt(note.value)] });
+    const before = await usdgOf(owner.address);
+    const proof = await poolWallet.ragequitProof(note.label, new RagequitProver());
+    // Anyone may submit it (here the relayer); the USDG can only go to the depositor.
+    await send(relayer, router, routerAbi, 'ragequit', [
+      {
+        pA: proof.pA.map(BigInt),
+        pB: proof.pB.map((r) => r.map(BigInt)),
+        pC: proof.pC.map(BigInt),
+        pubSignals: proof.pubSignals.map(BigInt),
+      },
+    ]);
+    const got = (await usdgOf(owner.address)) - before;
+    console.log(`   ragequit returned ${Number(got) / 1e6} USDG to the owner (the note was worth ${Number(left) / 1e6})`);
+    expect(got).toBeGreaterThanOrEqual(left - 2n);
+    await poolWallet.sync();
+    expect(store.load().notes[0]).toMatchObject({ value: '0', ragequitTx: expect.any(String) });
   }, 300_000);
 });

@@ -17,7 +17,7 @@ export const recyclerAbi = parseAbi([
   'struct Authorization { address from; uint256 value; uint256 validAfter; uint256 validBefore; bytes32 nonce; uint8 v; bytes32 r; bytes32 s; }',
   'function recycle(Authorization a, uint256 precommitment, uint256 fee, address feeRecipient) returns (uint256 commitment)',
   'function recycleNonce(uint256 precommitment, uint256 fee, address feeRecipient) pure returns (bytes32)',
-  'function refundTo(uint256 commitment) view returns (address)',
+  'function refundTo(uint256 label) view returns (address)',
   'function entrypoint() view returns (address)',
   'function asset() view returns (address)',
   'event Recycled(address indexed from, uint256 indexed commitment, uint256 deposited, uint256 fee, address feeRecipient)',
@@ -128,16 +128,12 @@ export class WalletRecycleSubmitter implements RecycleSubmitter {
   }
 
   async recycle(req: RecycleRequest): Promise<Hex> {
-    const hash = await this.wallet.writeContract({
-      address: this.recycler,
-      abi: recyclerAbi,
-      functionName: 'recycle',
-      args: recycleArgs(req),
-      account: this.wallet.account!,
-      chain: this.wallet.chain,
-    });
+    const call = { address: this.recycler, abi: recyclerAbi, functionName: 'recycle', args: recycleArgs(req), account: this.wallet.account! } as const;
+    // Estimates for calls into ERC-4626 vaults (Morpho) can come in too tight; leave headroom.
+    const gas = ((await this.publicClient.estimateContractGas(call)) * 13n) / 10n;
+    const hash = await this.wallet.writeContract({ ...call, gas, chain: this.wallet.chain });
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== 'success') throw new Error(`recycle reverted: ${hash}`);
+    if (receipt.status !== 'success') throw new Error(`recycle reverted: ${hash} (gas used ${receipt.gasUsed} of ${gas})`);
     return hash;
   }
 }

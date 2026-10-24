@@ -9,6 +9,7 @@ import {ECDSA} from '@oz/utils/cryptography/ECDSA.sol';
 import {EIP712} from '@oz/utils/cryptography/EIP712.sol';
 
 import {Entrypoint} from 'contracts/Entrypoint.sol';
+import {Constants} from 'contracts/lib/Constants.sol';
 import {ProofLib} from 'contracts/lib/ProofLib.sol';
 import {IEntrypoint} from 'interfaces/IEntrypoint.sol';
 import {IPrivacyPool} from 'interfaces/IPrivacyPool.sol';
@@ -135,8 +136,9 @@ contract SodiRecyclerTest is Test {
     assertEq(usdg.balanceOf(address(pool)), 3e6 - 10_000, 'deposited minus fee');
     assertEq(usdg.balanceOf(relayer), 10_000, 'fee paid to submitter');
     assertEq(usdg.balanceOf(address(recycler)), 0, 'nothing left behind');
-    assertEq(recycler.refundTo(commitment), session);
+    assertEq(recycler.refundTo(label), session, 'refunds keyed by label');
     assertEq(pool.depositors(label), address(recycler));
+    commitment;
     assertEq(session.balance, 0, 'session never needed gas');
   }
 
@@ -214,13 +216,48 @@ contract SodiRecyclerTest is Test {
     assertEq(usdg.balanceOf(attacker), 0);
     assertEq(usdg.balanceOf(address(recycler)), 0);
 
-    vm.expectRevert(SodiRecycler.UnknownCommitment.selector);
+    vm.expectRevert(SodiRecycler.UnknownLabel.selector);
     recycler.ragequit(proof);
   }
 
   function test_RagequitRefusesDepositsItDidntMake() public {
     ProofLib.RagequitProof memory proof = _ragequitProof(123, 456, 1e6);
-    vm.expectRevert(SodiRecycler.UnknownCommitment.selector);
+    vm.expectRevert(SodiRecycler.UnknownLabel.selector);
     recycler.ragequit(proof);
+  }
+
+  function test_RagequitsWhatIsLeftAfterAPartialWithdrawal() public {
+    (, uint256 label) = _recycle();
+    // Part of the deposit is withdrawn, so the note now has a new commitment with the same label.
+    vm.prank(vm.envAddress('POSTMAN_ADDRESS'));
+    entrypoint.updateRoot(uint256(keccak256('asp')) % Constants.SNARK_SCALAR_FIELD, 'QmPrototypeAssociationSetCid0000000000000000');
+    vm.mockCall(
+      address(IState(address(pool)).WITHDRAWAL_VERIFIER()),
+      abi.encodeWithSignature('verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[8])'),
+      abi.encode(true)
+    );
+    vm.mockCall(
+      address(IState(address(pool)).RAGEQUIT_VERIFIER()),
+      abi.encodeWithSignature('verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[4])'),
+      abi.encode(true)
+    );
+    IPrivacyPool.Withdrawal memory w = IPrivacyPool.Withdrawal({processooor: address(this), data: ''});
+    ProofLib.WithdrawProof memory wp;
+    uint256 changeCommitment = uint256(keccak256('change')) % Constants.SNARK_SCALAR_FIELD;
+    wp.pubSignals = [
+      changeCommitment,
+      uint256(keccak256('n1')) % Constants.SNARK_SCALAR_FIELD,
+      uint256(1e6),
+      IState(address(pool)).currentRoot(),
+      uint256(1),
+      entrypoint.latestRoot(),
+      uint256(1),
+      uint256(keccak256(abi.encode(w, pool.SCOPE()))) % Constants.SNARK_SCALAR_FIELD
+    ];
+    pool.withdraw(w, wp);
+
+    uint256 left = 3e6 - 10_000 - 1e6;
+    recycler.ragequit(_ragequitProof(changeCommitment, label, left));
+    assertEq(usdg.balanceOf(session), left, 'what was left goes back to the session');
   }
 }

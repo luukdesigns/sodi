@@ -153,7 +153,7 @@ contract YieldPoolForkTest is Test {
     assertEq(vault.balanceOf(address(pool)), d.shares, 'the shares are in the pool');
     assertEq(vault.balanceOf(saver), 0);
     assertEq(pool.depositors(d.label), address(depositor));
-    assertEq(depositor.refundTo(d.commitment), saver);
+    assertEq(depositor.refundTo(d.label), saver, 'refunds keyed by label');
     assertEq(USDG.balanceOf(address(vault)), 0, 'nothing left idle');
     assertGt(STEAK.balanceOf(address(vault)), 0, 'invested in steakUSDG');
     // About 1:1 with USDG's 6 decimals; the underlying vault rounds its preview down, so a hair more.
@@ -241,7 +241,7 @@ contract YieldPoolForkTest is Test {
     assertApproxEqAbs(USDG.balanceOf(saver), 100e6, 2);
     assertEq(USDG.balanceOf(stranger), 0);
     assertEq(vault.balanceOf(address(depositor)), 0);
-    vm.expectRevert(SodiYieldDepositor.UnknownCommitment.selector);
+    vm.expectRevert(SodiYieldDepositor.UnknownLabel.selector);
     _ragequit(d, 6);
   }
 
@@ -263,10 +263,16 @@ contract YieldPoolForkTest is Test {
     );
     (a.v, a.r, a.s) = vm.sign(key, digest);
     vm.prank(relayer);
-    uint256 commitment = depositor.recycle(a, precommitment, 0.01e6, relayer);
+    vm.recordLogs();
+    depositor.recycle(a, precommitment, 0.01e6, relayer);
+    uint256 label;
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    for (uint256 i; i < logs.length; ++i) {
+      if (logs[i].emitter == address(pool) && logs[i].topics[0] == IPrivacyPool.Deposited.selector) (, label,,) = abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
+    }
     assertEq(USDG.balanceOf(from), 0);
     assertEq(USDG.balanceOf(relayer), 0.01e6);
-    assertEq(depositor.refundTo(commitment), from);
+    assertEq(depositor.refundTo(label), from);
     assertApproxEqRel(vault.balanceOf(address(pool)), 29.99e6, 0.0001e18);
     assertEq(from.balance, 0, 'the old session never needed gas');
   }
@@ -411,5 +417,16 @@ contract YieldPoolForkTest is Test {
     ProofLib.WithdrawProof memory p = _proof(w, 1e6);
     vm.expectRevert(SodiSessionFunder.RelayFeeTooHigh.selector);
     funder.fund(w, p);
+  }
+
+  function test_RagequitsWhatIsLeftAfterASession() public {
+    Dep memory d = _deposit(saver, 100e6, 1);
+    _approveRoot('root');
+    uint256 spent = _fundSession(10e6, 9.9e6); // the note now has a change commitment
+    ProofLib.RagequitProof memory p;
+    p.pubSignals = [uint256(keccak256('new commitment')) % Constants.SNARK_SCALAR_FIELD, uint256(99), d.shares - spent, d.label];
+    depositor.ragequit(p);
+    emit log_named_decimal_uint('saver got back after a 10 USDG session', USDG.balanceOf(saver), 6);
+    assertApproxEqAbs(USDG.balanceOf(saver), 90e6, 0.01e6, 'the rest of the deposit, in USDG');
   }
 }

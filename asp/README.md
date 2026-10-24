@@ -7,13 +7,14 @@ Screens deposits into Sodi's pool and publishes the **approved-deposit set** (th
 Each cycle (every 15 s by default):
 
 1. **Scan.** Reads `Deposited` events from the pool, starting at the deployment block.
-2. **Screen.** Each deposit is `pending`, `approved` or `denied`:
-   - denied if the depositor is in `blocklist.json` `addresses`, or its label is in `labels`;
+2. **Find the real depositor.** The pool records whoever called it. When that's a trusted forwarder (the [recycler](../contracts/README.md#sodirecycler) or the yield pool's deposit router, listed as `forwarders` in the deployment file), the real depositor is the address the forwarder names in its own event for the same commitment in the same transaction. If no such event exists, the deposit is denied: it fails closed. Any other contract depositor is denied unless it is in `blocklist.json` `allowedContracts` (a known smart wallet, say), because a contract can deposit for users the service can't see; so is a contract that calls a forwarder. EIP-7702 delegated accounts count as ordinary accounts.
+3. **Screen.** Each deposit is `pending`, `approved` or `denied`:
+   - denied if the real depositor is in `blocklist.json` `addresses`, or its label is in `labels`;
    - pending until the vetting delay has passed (30 minutes by default), so an operator can deny it first;
    - otherwise approved.
    Every deposit is re-screened every cycle, so adding an address to the block list later revokes its approval.
-3. **Build.** Approved labels, in on-chain order, go into a LeanIMT hashed with Poseidon(2), the same structure the withdrawal circuit verifies.
-4. **Publish.** If the root differs from the Entrypoint's `latestRoot`, it writes the set to `data/sets/<cid>.json` and calls `updateRoot(root, cid)`. The CID is the IPFS CIDv1 of that file.
+4. **Build.** Approved labels, in on-chain order, go into a LeanIMT hashed with Poseidon(2), the same structure the withdrawal circuit verifies.
+5. **Publish.** If the root differs from the Entrypoint's `latestRoot`, it writes the set to `data/sets/<cid>.json` and calls `updateRoot(root, cid)`. The CID is the IPFS CIDv1 of that file.
 
 Publishing only happens when the approved set changes, because the pool accepts proofs against the latest root only: each new root invalidates withdrawal proofs built against the previous one.
 
@@ -50,7 +51,9 @@ If Node can't reach the RPC behind a corporate proxy, set `NODE_USE_ENV_PROXY=1`
 
 ## Verified
 
-- Unit tests for the tree, CID and screening rules (`npm test`).
+- Unit tests for the tree, CID and screening rules (`npm test`), including a blocklisted depositor going through the router or the recycler (denied), a forwarder deposit without its event (denied), an untrusted contract claiming to forward (denied), and older records being re-classified.
+- On a mainnet fork, through the real yield router: the owner's deposit was screened as the owner, and a blocklisted depositor's was denied (`packages/rx402/test/e2e-mainnet`).
+- Against live testnet: this morning's recycled deposits resolve to the sessions that recycled them.
 - End to end on a local fork of Robinhood Chain testnet: three real USDG deposits into the deployed pool, one from a blocked address. The service approved two, denied one, and published a root that matched on-chain; a second run did not republish; blocking a previously approved depositor revoked it and published a new root.
 - The TypeScript Poseidon/LeanIMT produces exactly the same root as the pool's on-chain Solidity tree for the same leaves.
 

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { Address, PublicClient, WalletClient } from 'viem';
 
-import { ASP_POSTMAN_ROLE, entrypointAbi, fetchDeposits, latestRoot } from './chain.js';
+import { ASP_POSTMAN_ROLE, classifyDepositor, entrypointAbi, fetchDeposits, latestRoot } from './chain.js';
 import { type DepositRecord, type ScreeningPolicy, approvedLabels, screen } from './screening.js';
 import { saveState, type ServiceState } from './state.js';
 import { associationSetDocument, documentCid, encodeDocument } from './tree.js';
@@ -19,6 +19,11 @@ export interface ServiceContext {
   walletClient?: WalletClient;
   entrypoint: Address;
   pools: Address[];
+  /**
+   * Contracts that deposit on someone else's behalf and say for whom in an event (SodiRecycler,
+   * SodiYieldDepositor). Deposits they make are screened against the real depositor.
+   */
+  forwarders?: Address[];
   policy: ScreeningPolicy;
   state: ServiceState;
   stateFile: string;
@@ -76,7 +81,19 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
     state.lastScannedBlock = Number(head);
   }
 
-  // 2. Screen every deposit (re-screening lets block-list updates revoke past approvals).
+  // 2. Establish who really made each deposit not yet classified (new ones, and records from before
+  //    this was tracked): through a trusted forwarder, directly, or by some other contract.
+  const forwarders = new Set((ctx.forwarders ?? []).map((a) => a.toLowerCase()));
+  for (const d of state.deposits) {
+    if (d.kind !== undefined) continue;
+    const c = await classifyDepositor(publicClient, d, forwarders);
+    d.kind = c.kind;
+    d.depositor = c.depositor;
+    if (c.via) d.via = c.via;
+    if (c.kind !== 'eoa') log(`deposit ${shortLabel(d)}: ${c.kind}${c.via ? ` via ${c.via}` : ''}`);
+  }
+
+  // 3. Screen every deposit (re-screening lets block-list updates revoke past approvals).
   for (const d of state.deposits) {
     const before = d.status;
     Object.assign(d, screen(d, ctx.policy, now()));
@@ -84,7 +101,7 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
   }
   saveState(ctx.stateFile, state);
 
-  // 3. Build the set and compare with on-chain.
+  // 4. Build the set and compare with on-chain.
   const labels = approvedLabels(state.deposits);
   const onChainRoot = await latestRoot(publicClient, ctx.entrypoint);
   const counts = countStatuses(state.deposits);
@@ -100,7 +117,7 @@ export async function runCycle(ctx: ServiceContext): Promise<CycleResult> {
   const root = BigInt(doc.root);
   const result: CycleResult = { newDeposits, ...counts, root, onChainRoot };
 
-  // 4. Write the set, so clients can fetch it, then publish its root if the chain doesn't have it yet.
+  // 5. Write the set, so clients can fetch it, then publish its root if the chain doesn't have it yet.
   const cid = await documentCid(doc);
   mkdirSync(ctx.setsDir, { recursive: true });
   writeFileSync(join(ctx.setsDir, `${cid}.json`), encodeDocument(doc));

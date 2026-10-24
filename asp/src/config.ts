@@ -6,7 +6,9 @@ import type { Address, Hex } from 'viem';
 export interface Deployment {
   chainId: number;
   deploymentBlock: number;
-  contracts: { Entrypoint: Address };
+  contracts: { Entrypoint: Address; SodiRecycler?: Address; SodiYieldDepositor?: Address };
+  /** Contracts that deposit for others and name them in an event (recyclers, the yield router), current and superseded. */
+  forwarders?: Address[];
   pools: Record<string, { asset: Address; pool: Address; scope: string }>;
 }
 
@@ -65,9 +67,11 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): Config {
 export interface Blocklist {
   addresses: string[];
   labels: string[];
+  /** Contracts allowed to deposit directly, e.g. known smart wallets. All other contracts are denied. */
+  allowedContracts: string[];
 }
 
 export function loadBlocklist(path: string): Blocklist {
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<Blocklist>;
-  return { addresses: parsed.addresses ?? [], labels: parsed.labels ?? [] };
+  return { addresses: parsed.addresses ?? [], labels: parsed.labels ?? [], allowedContracts: parsed.allowedContracts ?? [] };
 }

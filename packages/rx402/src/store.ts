@@ -16,6 +16,8 @@ export interface PoolNote {
   /** Withdrawals made from this deposit so far. */
   spendCount: number;
   depositTx: Hex;
+  /** Set when what was left of the deposit was ragequit back to its depositor; `value` is then 0. */
+  ragequitTx?: Hex;
 }
 
 /** A fresh address funded from the pool, used to pay x402 merchants. */

@@ -191,7 +191,8 @@ describe('recycling sessions into the pool, on a testnet fork', () => {
     expect(receipt.from.toLowerCase()).toBe(relayerAcct.address.toLowerCase());
     const [dep] = parseEventLogs({ abi: [depositedEvent], logs: receipt.logs }).filter((l) => l.address.toLowerCase() === POOL.toLowerCase());
     expect(dep!.args._depositor.toLowerCase()).toBe(recycler.toLowerCase());
-    expect(await publicClient.readContract({ address: recycler, abi: recyclerAbi, functionName: 'refundTo', args: [dep!.args._commitment] })).toBe(first!.address);
+    // Refunds are keyed by label, which survives partial withdrawals.
+    expect(await publicClient.readContract({ address: recycler, abi: recyclerAbi, functionName: 'refundTo', args: [dep!.args._label] })).toBe(first!.address);
     // The session never held gas.
     expect(await publicClient.getBalance({ address: first!.address })).toBe(0n);
     expect(storeA.load().sessions[0]!.recycledTx).toBe(outcomes[0]!.tx);
@@ -212,15 +213,15 @@ describe('recycling sessions into the pool, on a testnet fork', () => {
   }, 300_000);
 
   it('reports sessions too small to recycle', async () => {
-    // Spend the second session of agent A down below the pool minimum (0.1 USDG).
+    // Spend the second session of agent A down below the pool minimum (0.01 USDG on testnet).
     const second = storeA.load().sessions[1]!;
     const sessionWallet = wallet(privateKeyToAccount(second.privateKey));
     await testClient.setBalance({ address: second.address, value: 10n ** 16n });
-    await publicClient.waitForTransactionReceipt({ hash: await sessionWallet.writeContract({ address: USDG, abi: erc20, functionName: 'transfer', args: [MERCHANT, 450_000n] }) });
+    await publicClient.waitForTransactionReceipt({ hash: await sessionWallet.writeContract({ address: USDG, abi: erc20, functionName: 'transfer', args: [MERCHANT, 485_000n] }) });
     // Make it not current by opening a third session.
     expect((await clientA.fetch('http://127.0.0.1:18423/v1/data')).response.status).toBe(200);
     offset = 1_500;
     const outcomes = await clientA.recycleSessions({ submitter });
-    expect(outcomes).toEqual([{ session: second.address, amount: 40_000n, status: 'too-small' }]);
+    expect(outcomes).toEqual([{ session: second.address, amount: 5_000n, status: 'too-small' }]);
   }, 600_000);
 });

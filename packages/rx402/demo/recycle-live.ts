@@ -88,6 +88,7 @@ try {
     walletClient: postman,
     entrypoint: ENTRYPOINT,
     pools: [POOL],
+    forwarders: deployment.forwarders ?? [RECYCLER], // recycled deposits are screened against the session that recycled them
     policy: { blockedAddresses: new Set(), deniedLabels: new Set(), vettingDelaySeconds: 0 },
     state: aspState,
     stateFile: join(aspDir, 'state.json'),

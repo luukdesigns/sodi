@@ -2,9 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { PublicClient, WalletClient } from 'viem';
+import { type PublicClient, type WalletClient, encodeAbiParameters, encodeEventTopics } from 'viem';
 import { describe, expect, it } from 'vitest';
 
+import { forwarderEvents } from '../src/chain.js';
 import { SENTINEL_LABEL, runCycle } from '../src/service.js';
 import type { ServiceState } from '../src/state.js';
 import { computeRoot } from '../src/tree.js';
@@ -12,9 +13,20 @@ import { computeRoot } from '../src/tree.js';
 const ENTRYPOINT = '0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce';
 const POOL = '0x8cddbb1c33ce49ab72fd1765649835935604bf76';
 
+const ROUTER = '0x00000000000000000000000000000000000000a0';
+const RECYCLER = '0x00000000000000000000000000000000000000c0';
+const SOMEONE = '0x00000000000000000000000000000000000000d1';
+const EVIL = '0x00000000000000000000000000000000000000e1';
+const WALLET = '0x00000000000000000000000000000000000000f1';
+
 /** An Entrypoint and pool, as far as the approval service can see them. */
 function fakeChain() {
-  const deposits: { label: bigint; depositor: string; block: bigint }[] = [];
+  const deposits: { label: bigint; depositor: string; block: bigint; commitment: bigint; forwarded?: { by: string; from: string; commitment: bigint; event: 'Recycled' | 'Deposited' } }[] = [];
+  const code = new Map<string, string>([
+    [ROUTER, '0x6001'],
+    [RECYCLER, '0x6001'],
+    [WALLET, '0x6001'],
+  ]);
   let head = 100n;
   let root = 0n;
   const published: bigint[] = [];
@@ -26,11 +38,25 @@ function fakeChain() {
         .filter((d) => d.block >= fromBlock && d.block <= toBlock)
         .map((d, i) => ({
           address: POOL,
-          args: { _label: d.label, _depositor: d.depositor, _value: 1n, _commitment: 1n },
+          args: { _label: d.label, _depositor: d.depositor, _value: 1n, _commitment: d.commitment },
           blockNumber: d.block,
           logIndex: i,
-          transactionHash: `0x${'00'.repeat(31)}01`,
+          transactionHash: `0x${d.label.toString(16).padStart(64, '0')}`,
         })),
+    getCode: async ({ address }: { address: string }) => code.get(address.toLowerCase()) ?? '0x',
+    getTransactionReceipt: async ({ hash }: { hash: string }) => {
+      const d = deposits.find((x) => BigInt(hash) === x.label)!;
+      const f = d.forwarded;
+      if (!f) return { logs: [] };
+      const event = forwarderEvents.find((e) => e.name === f.event)!;
+      const data =
+        f.event === 'Recycled'
+          ? encodeAbiParameters([{ type: 'uint256' }, { type: 'uint256' }, { type: 'address' }], [1n, 0n, SOMEONE])
+          : encodeAbiParameters([{ type: 'uint256' }, { type: 'uint256' }], [1n, 1n]);
+      return {
+        logs: [{ address: f.by, topics: encodeEventTopics({ abi: [event], args: { from: f.from as `0x${string}`, commitment: f.commitment } } as never), data, blockNumber: d.block, logIndex: 0, transactionHash: hash }],
+      };
+    },
     readContract: async ({ functionName }: { functionName: string }) => {
       if (functionName === 'latestRoot') {
         if (root === 0n) throw new Error('NoRootsAvailable()');
@@ -53,20 +79,25 @@ function fakeChain() {
     publicClient,
     walletClient,
     published,
-    deposit: (label: bigint, depositor: string, block = head) => deposits.push({ label, depositor, block }),
+    deposit: (label: bigint, depositor: string, block = head) => deposits.push({ label, depositor, block, commitment: label * 10n }),
+    /** A deposit the pool credits to `by`, which emitted `event` naming `from` for `commitment`. */
+    forwarded: (label: bigint, by: string, from: string, event: 'Recycled' | 'Deposited' = 'Deposited', commitment = label * 10n) =>
+      deposits.push({ label, depositor: by, block: head, commitment: label * 10n, forwarded: { by, from, commitment, event } }),
+    setCode: (a: string, c: string) => code.set(a, c),
     advance: (n: bigint) => (head += n),
     root: () => root,
   };
 }
 
-function ctx(chain: ReturnType<typeof fakeChain>, state: ServiceState, blocked: string[] = []) {
+function ctx(chain: ReturnType<typeof fakeChain>, state: ServiceState, blocked: string[] = [], allowedContracts: string[] = []) {
   const dir = mkdtempSync(join(tmpdir(), 'sodi-asp-'));
   return {
     publicClient: chain.publicClient,
     walletClient: chain.walletClient,
     entrypoint: ENTRYPOINT as `0x${string}`,
     pools: [POOL as `0x${string}`],
-    policy: { blockedAddresses: new Set(blocked), deniedLabels: new Set<string>(), vettingDelaySeconds: 0 },
+    forwarders: [ROUTER, RECYCLER] as `0x${string}`[],
+    policy: { blockedAddresses: new Set(blocked), deniedLabels: new Set<string>(), vettingDelaySeconds: 0, allowedContracts: new Set(allowedContracts) },
     state,
     stateFile: join(dir, 'state.json'),
     setsDir: join(dir, 'sets'),
@@ -122,5 +153,101 @@ describe('approval service cycle', () => {
     await runCycle(ctx(chain, state));
     expect(state.deposits.map((d) => d.label).sort()).toEqual(['7', '8']);
     expect(chain.root()).toBe(computeRoot([8n, 7n])); // on-chain order
+  });
+
+  describe('the real depositor behind the router and the recycler', () => {
+    const statusOf = (state: ServiceState, label: string) => state.deposits.find((d) => d.label === label)!;
+
+    it('screens the depositor named by the router, not the router', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, SOMEONE);
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'approved', kind: 'forwarded', depositor: SOMEONE, via: ROUTER });
+      expect(chain.root()).toBe(computeRoot([7n]));
+    });
+
+    it('denies a blocklisted depositor who goes through the router', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, EVIL);
+      chain.deposit(8n, '0xaa');
+      const state = fresh();
+      await runCycle(ctx(chain, state, [EVIL]));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', depositor: EVIL, via: ROUTER });
+      expect(statusOf(state, '7').reason).toMatch(/block list/);
+      expect(chain.root()).toBe(computeRoot([8n]));
+    });
+
+    it('denies a blocklisted depositor who goes through the recycler', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, RECYCLER, EVIL, 'Recycled');
+      const state = fresh();
+      await runCycle(ctx(chain, state, [EVIL]));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', depositor: EVIL, via: RECYCLER });
+    });
+
+    it('revokes an approval when the real depositor is blocklisted later', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, EVIL);
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7').status).toBe('approved');
+      await runCycle(ctx(chain, state, [EVIL]));
+      expect(statusOf(state, '7').status).toBe('denied');
+      expect(chain.root()).toBe(computeRoot([SENTINEL_LABEL]));
+    });
+
+    it("fails closed when the forwarder's event is missing or names another deposit", async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, SOMEONE, 'Deposited', 999n); // event for a different commitment
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'unresolved' });
+      expect(chain.published).toHaveLength(0);
+    });
+
+    it("ignores events from contracts it doesn't trust, and denies their deposits", async () => {
+      const chain = fakeChain();
+      chain.setCode(EVIL, '0x6001');
+      chain.forwarded(7n, EVIL, SOMEONE); // an untrusted contract claiming to forward for someone clean
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'contract', depositor: EVIL });
+    });
+
+    it('denies a contract that deposits through the router, which could be depositing for others', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, ROUTER, WALLET);
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', kind: 'contract', depositor: WALLET, via: ROUTER });
+      // An operator can allow a known contract, such as a smart wallet, before it deposits.
+      const chain2 = fakeChain();
+      chain2.forwarded(7n, ROUTER, WALLET);
+      const state2 = fresh();
+      await runCycle(ctx(chain2, state2, [], [WALLET]));
+      expect(statusOf(state2, '7').status).toBe('approved');
+    });
+
+    it('treats an EIP-7702 delegated account as an ordinary account', async () => {
+      const chain = fakeChain();
+      chain.setCode(SOMEONE, `0xef0100${'11'.repeat(20)}`);
+      chain.deposit(7n, SOMEONE);
+      const state = fresh();
+      await runCycle(ctx(chain, state));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'approved', kind: 'eoa' });
+    });
+
+    it('re-classifies records saved before this was tracked', async () => {
+      const chain = fakeChain();
+      chain.forwarded(7n, RECYCLER, EVIL, 'Recycled');
+      const state = fresh();
+      // As an older version would have saved it: approved, with the recycler as depositor.
+      state.deposits.push({ pool: POOL, label: '7', depositor: RECYCLER, value: '1', commitment: '70', blockNumber: 100, logIndex: 0, txHash: `0x${(7).toString(16).padStart(64, '0')}`, timestamp: 1_000, status: 'approved' });
+      state.lastScannedBlock = 200;
+      chain.advance(150n);
+      await runCycle(ctx(chain, state, [EVIL]));
+      expect(statusOf(state, '7')).toMatchObject({ status: 'denied', depositor: EVIL, via: RECYCLER });
+    });
   });
 });

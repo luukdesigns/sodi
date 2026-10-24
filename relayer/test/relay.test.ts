@@ -84,6 +84,7 @@ describe('abuse resistance', () => {
         return { request: { tag: args[0].data } };
       },
       waitForTransactionReceipt: async () => ({ status: 'success' }),
+      estimateContractGas: async () => 100_000n,
     };
     const wallet = { account: { address: RELAYER }, chain: undefined, writeContract: async (r: { tag: string }) => (sent.push(r.tag), '0x01') };
     return { publicClient, wallet, sent };

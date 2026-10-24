@@ -9,6 +9,7 @@ import {
   keccak256,
   parseAbi,
   parseAbiItem,
+  parseEventLogs,
   toHex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -18,6 +19,42 @@ import type { DepositRecord } from './screening.js';
 export const depositedEvent = parseAbiItem(
   'event Deposited(address indexed _depositor, uint256 _commitment, uint256 _label, uint256 _value, uint256 _precommitmentHash)',
 );
+
+/** Events of the trusted forwarders that name the real depositor of a pool deposit. */
+export const forwarderEvents = parseAbi([
+  // SodiRecycler and SodiYieldDepositor (gasless recycles)
+  'event Recycled(address indexed from, uint256 indexed commitment, uint256 deposited, uint256 fee, address feeRecipient)',
+  // SodiYieldDepositor (ordinary deposits)
+  'event Deposited(address indexed from, uint256 indexed commitment, uint256 assets, uint256 shares)',
+]);
+
+/**
+ * Establishes who really funded a deposit. A trusted forwarder must have emitted an event for this
+ * exact commitment in the same transaction; otherwise the deposit is `unresolved` and will be denied.
+ * Any other contract depositor is a `contract`. EIP-7702 delegated accounts count as ordinary accounts.
+ */
+export async function classifyDepositor(
+  client: PublicClient,
+  d: { depositor: string; commitment: string; txHash: string },
+  forwarders: ReadonlySet<string>,
+): Promise<{ kind: 'eoa' | 'forwarded' | 'unresolved' | 'contract'; depositor: string; via?: string }> {
+  const isContract = async (a: string) => {
+    const code = await client.getCode({ address: a as Address });
+    return !!code && code !== '0x' && !code.toLowerCase().startsWith('0xef0100');
+  };
+  const seen = d.depositor.toLowerCase();
+  if (forwarders.has(seen)) {
+    const receipt = await client.getTransactionReceipt({ hash: d.txHash as Hex });
+    const match = parseEventLogs({ abi: forwarderEvents, logs: receipt.logs }).find(
+      (l) => l.address.toLowerCase() === seen && l.args.commitment === BigInt(d.commitment),
+    );
+    if (!match) return { kind: 'unresolved', depositor: seen, via: seen };
+    const from = match.args.from.toLowerCase();
+    // A contract calling the forwarder could itself be depositing for others.
+    return { kind: (await isContract(from)) ? 'contract' : 'forwarded', depositor: from, via: seen };
+  }
+  return { kind: (await isContract(seen)) ? 'contract' : 'eoa', depositor: seen };
+}
 
 export const entrypointAbi = parseAbi([
   'function latestRoot() view returns (uint256)',

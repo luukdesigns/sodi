@@ -1,7 +1,7 @@
 import { type Address, type Hex, type LocalAccount, type PublicClient, type WalletClient, encodeAbiParameters, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
+import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findRagequit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
 import {
   type MasterKeys,
   type Withdrawal,
@@ -15,7 +15,7 @@ import {
   withdrawalContext,
   withdrawalSecrets,
 } from './crypto.js';
-import type { SolidityProof, WithdrawalProver } from './prover.js';
+import type { RagequitProver, RagequitSolidityProof, SolidityProof, WithdrawalProver } from './prover.js';
 import { type RecycleSubmitter, type TokenDomain, USDG_DOMAIN, recycleFrom } from './recycle.js';
 import type { Relayer } from './relayer.js';
 import type { PoolNote, Session, Store, WalletState } from './store.js';
@@ -260,12 +260,21 @@ export class PoolWallet {
     const found: Observed[] = [];
     for (const note of state.notes) {
       for (;;) {
+        if (note.ragequitTx) break;
         const label = BigInt(note.label);
         const existing = this.noteSecrets(note);
         const spent = await publicClient.readContract({ address: pool, abi: poolAbi, functionName: 'nullifierHashes', args: [nullifierHash(existing.nullifier)] });
         if (!spent) break;
         const w = await findWithdrawal(publicClient, pool, entrypoint, poolDeploymentBlock, nullifierHash(existing.nullifier));
-        if (!w) throw new Error(`deposit ${note.label} was spent but its withdrawal was not found; check the RPC`);
+        if (!w) {
+          // Not withdrawn: ragequit, then. Nothing is left of the deposit.
+          const r = await findRagequit(publicClient, pool, poolDeploymentBlock, commitmentHash(BigInt(note.value), label, existing));
+          if (!r) throw new Error(`deposit ${note.label} was spent but neither a withdrawal nor a ragequit was found; check the RPC`);
+          note.value = '0';
+          note.ragequitTx = r.txHash;
+          found.push({ label: note.label, spendIndex: note.spendCount, received: r.value, txHash: r.txHash });
+          break;
+        }
         const key = sessionPrivateKey(this.keys, label, BigInt(note.spendCount));
         const address = privateKeyToAccount(key).address;
         const remaining = BigInt(note.value) - w.value;
@@ -288,6 +297,24 @@ export class PoolWallet {
     return note.spendCount === 0
       ? depositSecrets(this.keys, BigInt(note.scope), BigInt(note.depositIndex))
       : withdrawalSecrets(this.keys, BigInt(note.label), BigInt(note.spendCount - 1));
+  }
+
+  /**
+   * A ragequit proof for what's left of the deposit with `label`: the public exit back to the address
+   * that deposited, with no relayer and no approval needed. Submit it to the pool from the original
+   * depositor, or to the forwarder (recycler or yield router) the deposit was made through.
+   */
+  ragequitProof(label: string, prover: RagequitProver): Promise<RagequitSolidityProof> {
+    return this.exclusive(async () => {
+      const state = this.config.store.load();
+      const recovered = await this.recoverDeposits(state);
+      if ((await this.syncNotes(state)).length || recovered) this.config.store.save(state);
+      const note = state.notes.find((n) => n.label === label);
+      if (!note) throw new Error(`no deposit with label ${label}`);
+      if (BigInt(note.value) === 0n) throw new Error(`deposit ${label} has nothing left`);
+      const { proof } = await prover.prove({ value: BigInt(note.value), label: BigInt(note.label), secrets: this.noteSecrets(note) });
+      return proof;
+    });
   }
 
   /** Re-reads deposits and withdrawals from the chain and saves the result. */
