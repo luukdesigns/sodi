@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="brand/sodi-logo-light.png">
-    <img src="brand/sodi-logo-dark.png" alt="Sodi" width="120">
+    <source media="(prefers-color-scheme: dark)" srcset="brand/sodi-logo-light.svg">
+    <img src="brand/sodi-logo-dark.svg" alt="Sodi" width="120">
   </picture>
 </p>
 

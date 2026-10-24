@@ -6,10 +6,16 @@ Logo and brand identity by **Luuk Visser**.
 
 | File | Use on |
 | --- | --- |
-| `sodi-logo-dark.png` | Light backgrounds |
-| `sodi-logo-light.png` | Dark backgrounds |
+| `sodi-logo-dark.svg`, `sodi-logo-dark.png` | Light backgrounds |
+| `sodi-logo-light.svg`, `sodi-logo-light.png` | Dark backgrounds |
 
-Both are 800×800 PNGs with transparent backgrounds. SVG versions to follow.
+The SVGs are true vectors and scale to any size; use them wherever you can. The PNGs are 800×800 with transparent backgrounds, framed the same way.
+
+| Colour | Hex |
+| --- | --- |
+| Lime | `#B4E900` |
+| Light grey | `#DADADC` |
+| Near-black | `#111111` |
 
 ## Use of the name and logo
 
