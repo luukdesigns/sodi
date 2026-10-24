@@ -1,6 +1,12 @@
-# @sodi/mcp
+# @sodi/rx402-mcp
 
-MCP server that gives AI agents a private wallet for x402 APIs. When a tool call hits `402 Payment Required`, it pays in USDG from an rx402 session address that can't be linked to the owner.
+MCP server that gives AI agents a private wallet for x402 APIs, and private pay-per-request inference. When a tool call hits `402 Payment Required`, it pays in USDG from an rx402 session address that can't be linked to the owner.
+
+```sh
+claude mcp add sodi -e RX402_MNEMONIC="twelve words …" -- npx -y @sodi/rx402-mcp
+```
+
+Runs on Robinhood Chain testnet by default. It needs Node 20.11 or later.
 
 ## Tools
 
@@ -27,37 +33,44 @@ With `RX402_MNEMONIC`, the MCP server's machine holds the whole pool, and these 
 
 ## Use with Claude
 
-The server needs a running [relayer](../../relayer) and [approval service](../../asp).
+Claude Code:
+
+```sh
+claude mcp add sodi -e RX402_MNEMONIC="twelve words …" -- npx -y @sodi/rx402-mcp
+```
+
+With a [session issuer](../../issuer), the agent's machine never holds the mnemonic:
+
+```sh
+claude mcp add sodi -e RX402_ISSUER_URL=https://issuer.example -e RX402_AGENT_KEY=0x… -- npx -y @sodi/rx402-mcp
+```
+
+Claude Desktop and other MCP clients:
 
 ```json
 {
   "mcpServers": {
     "sodi": {
       "command": "npx",
-      "args": ["tsx", "/path/to/sodi/packages/mcp/src/index.ts"],
-      "env": {
-        "RX402_MNEMONIC": "twelve words …",
-        "RELAYER_URL": "http://localhost:8403",
-        "ASP_URL": "http://localhost:8402",
-        "RX402_MAX_PER_REQUEST": "0.10",
-        "RX402_MAX_TOTAL_SPEND": "5"
-      }
+      "args": ["-y", "@sodi/rx402-mcp"],
+      "env": { "RX402_MNEMONIC": "twelve words …", "RX402_MAX_PER_REQUEST": "0.10", "RX402_MAX_TOTAL_SPEND": "5" }
     }
   }
 }
 ```
 
-For Claude Code: `claude mcp add sodi -- npx tsx /path/to/sodi/packages/mcp/src/index.ts`, with the same variables in the environment.
+By default it uses Sodi's hosted [relayer](../../relayer), [approval service](../../asp) and [inference gateway](../inference-gateway); point `RELAYER_URL`, `ASP_URL` and `RX402_GATEWAY_URL` at your own to run without them. The package ships the Privacy Pools withdrawal circuit, checked against its pinned hashes at startup, and the testnet deployment. From a checkout, `npm start` runs the same server from source.
 
 | Variable | Default | |
 | --- | --- | --- |
 | `RX402_MNEMONIC` | required without an issuer | Seed for pool secrets. Treat it like a wallet seed. |
 | `RX402_ISSUER_URL` | unset | Get sessions from a [session issuer](../../issuer) instead; the agent then holds no pool secret. Set this or `RX402_MNEMONIC`, not both. |
 | `RX402_AGENT_KEY` | with an issuer | The agent's own key: signs requests to the issuer and derives session keys. |
-| `RELAYER_URL` | `http://localhost:8403` | |
-| `ASP_URL` | `http://localhost:8402` | |
+| `RELAYER_URL` | `https://relayer.sodi.network` | |
+| `ASP_URL` | `https://asp.sodi.network` | |
 | `RPC_URL` | Robinhood Chain testnet | |
-| `DEPLOYMENT_FILE` | `contracts/deployments/46630.json` | |
+| `DEPLOYMENT_FILE` | the testnet deployment | Shipped in the package; `contracts/deployments/46630.json` from a checkout |
+| `RX402_CIRCUITS_DIR` | shipped in the package | Withdrawal circuit (`withdraw.wasm`, `.zkey`, `.vkey`); checked against pinned hashes |
 | `RX402_STORE` | `~/.sodi/rx402.json` | Notes and session keys; keep private |
 | `RX402_SESSION_BUDGET` | `1` | USDG per session |
 | `RELAYER_FEE_RECIPIENT` | unset | Pin the relayer's fee address; the client refuses a relayer that quotes another (a relayer could otherwise tag your sessions) |

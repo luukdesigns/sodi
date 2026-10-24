@@ -47,7 +47,7 @@ sodi/
 ├── contracts/        Pool deployment and the Sodi recycler (Foundry)
 ├── packages/
 │   ├── rx402/        Agent SDK: deposits, private sessions, x402 payments (@sodi/rx402)
-│   ├── mcp/          MCP server: private x402 payments as agent tools (@sodi/mcp)
+│   ├── mcp/          MCP server: private x402 payments as agent tools (@sodi/rx402-mcp)
 │   └── inference-gateway/  Private pay-per-request inference over rx402, backed by OpenRouter
 ├── asp/              Approval service: screens deposits, publishes the approved set
 ├── relayer/          Gasless withdrawals to session addresses

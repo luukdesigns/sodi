@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -27,10 +27,17 @@ const usdg = (s: string) => parseUnits(s, 6);
 /** Builds the rx402 client and MCP limits from environment variables (see README). */
 export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOptions }> {
   const rpcUrl = env('RPC_URL', 'https://rpc.testnet.chain.robinhood.com');
+  // The npm package ships the deployment and the circuits next to its bundle; a checkout uses the repo's.
+  const packaged = (p: string) => (existsSync(resolve(import.meta.dirname, p)) ? resolve(import.meta.dirname, p) : undefined);
   const deploymentFile = env(
     'DEPLOYMENT_FILE',
-    resolve(import.meta.dirname, '../../../contracts/deployments/46630.json'),
+    packaged('deployments/46630.json') ?? resolve(import.meta.dirname, '../../../contracts/deployments/46630.json'),
   );
+  const circuitsDir = process.env.RX402_CIRCUITS_DIR ?? packaged('circuits');
+  const prover = () =>
+    new WithdrawalProver(
+      circuitsDir ? { wasm: resolve(circuitsDir, 'withdraw.wasm'), zkey: resolve(circuitsDir, 'withdraw.zkey'), vkey: resolve(circuitsDir, 'withdraw.vkey') } : undefined,
+    );
   const deployment = JSON.parse(readFileSync(deploymentFile, 'utf8'));
   const chain = defineChain({
     id: deployment.chainId,
@@ -57,7 +64,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
   };
 
   // With a session issuer, this process holds only an agent key: the pool secret stays with the issuer.
-  const relayerUrl = env('RELAYER_URL', 'http://localhost:8403');
+  const relayerUrl = env('RELAYER_URL', 'https://relayer.sodi.network');
   const relayerTerms = {
     chainId: deployment.chainId as number,
     entrypoint: deployment.contracts.Entrypoint as Address,
@@ -80,8 +87,8 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
       mnemonic: env('RX402_MNEMONIC'),
       ...poolSettings,
       relayer: (relayer = await HttpRelayer.connect(relayerUrl, relayerTerms)),
-      prover: new WithdrawalProver(),
-      associationSet: aspAssociationSet(env('ASP_URL', 'http://localhost:8402')),
+      prover: prover(),
+      associationSet: aspAssociationSet(env('ASP_URL', 'https://asp.sodi.network')),
     });
   }
 
