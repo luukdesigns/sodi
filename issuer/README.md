@@ -19,6 +19,8 @@ If the agent's machine is compromised, the most it can take is what the issuer s
 3. It records the grant (which counts against the 24-hour limit from that moment), then proves and relays a zero-knowledge withdrawal to the address, exactly as rx402 does on its own.
 4. The agent checks the funds arrived on-chain, then pays merchants from the session as usual.
 
+Recycling a finished session works too: the agent asks the issuer for a fresh deposit of the owner's (`POST /precommitment`), signs the session's funds over to the recycler, and the issuer finds the new deposit on its next sync. It's allowed while funding is paused, since it only adds to the pool.
+
 The agent recovers a session the issuer funded while it was down: session keys come from the agent key, so it finds them on-chain. A withdrawal that fails keeps counting against the limit, because the relayer may still land it later.
 
 ## Run it

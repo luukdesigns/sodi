@@ -61,13 +61,32 @@ Payments work exactly the same. Session keys are derived from the agent key, and
 
 If the merchant offers a [stealth address](../../stealth), the payment goes to a fresh one-time address instead of its public `payTo`, so the merchant's side is private too. Pass `stealth: false` to turn this off.
 
+### Recycling leftover funds
+
+After rotation, what's left in an old session can go back into the pool:
+
+```ts
+const relayer = await HttpRelayer.connect('https://relayer.example');
+const outcomes = await client.recycleSessions({
+  submitter: relayer.recycleSubmitter({ recycler: deployment.contracts.SodiRecycler }),
+});
+// [{ session, amount, status: 'recycled' | 'too-small' | 'empty' | 'failed', tx? }]
+```
+
+Each finished session signs a transfer to the [SodiRecycler](../../contracts/README.md#sodirecycler), which deposits it into the pool as a new deposit of the owner's. The relayer submits it, so the session never needs gas. With a [session issuer](../../issuer), the issuer supplies the deposit, and the agent still holds no pool secret.
+
+- **It waits.** The current session, and any session that signed a payment in the last 10 minutes, is left alone: a merchant may still settle a signed payment, and the funds must be there when it does.
+- **It's public, like any deposit.** Anyone can see that this session put this amount back into the pool; once it's there, its later withdrawals are as private as any other.
+- **Small amounts can't go back.** The pool has a minimum deposit (0.1 USDG on testnet). Sessions holding less, after the relayer's fee, are reported as `too-small`.
+- **Merchants can do the same** with stealth payments: `poolWallet.recycle(privateKeyToAccount(merchant.keyFor(p.ephemeralPublicKey)), submitter)` puts one stealth address's balance into the merchant's own pool. Recycle them one at a time, not in one batch, or the batch links them.
+
 ## How a payment works
 
 1. **Deposit (public).** The owner deposits into the pool. Secrets are derived from the mnemonic, exactly as in the 0xbow Privacy Pools SDK, so the same mnemonic recovers the deposit in any compatible wallet.
 2. **Approval.** The [approval service](../../asp) screens the deposit and adds its label to the association set.
 3. **Open a session (private).** rx402 proves in zero knowledge that it owns an approved, unspent commitment, and withdraws `budget` to a fresh address. A relayer submits the transaction, so the session address never needs gas. The rest of the deposit stays in the pool as a new commitment.
 4. **Pay.** The session signs an EIP-3009 `transferWithAuthorization` for the merchant. Any x402 facilitator settles it. Both x402 v1 (`X-PAYMENT`) and v2 (`PAYMENT-SIGNATURE`) are supported.
-5. **Rotate.** After `maxPayments`, `maxAgeSeconds`, or when the budget runs out, the next payment opens a new session from the remaining balance.
+5. **Rotate.** After `maxPayments`, `maxAgeSeconds`, or when the budget runs out, the next payment opens a new session from the remaining balance. What's left in the old one can be [recycled](#recycling-leftover-funds).
 
 ## What is private
 
@@ -88,7 +107,6 @@ Circuit artifacts are loaded from the pinned Privacy Pools submodule and checked
 
 ## Not done yet
 
-- **Leftover session funds** stay at the old session address after rotation. Sweeping them back into the pool is planned.
 - **The mnemonic is the whole pool.** With it in the agent process, a compromised machine can withdraw everything. Use a [session issuer](../../issuer) for agents that run unattended.
 - **The store file holds session private keys.** Keep it as secure as a wallet; each key only controls one session's budget.
 - **Recovery from mnemonic alone** (scanning the chain for past deposits) is not implemented; the store is needed.

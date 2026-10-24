@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 
-import { RelayError, type RelaySubmitter, type RelayerSettings, checkTerms, parseRelayRequest } from './relay.js';
+import { RelayError, type RelaySubmitter, type RelayerSettings, checkRecycleTerms, checkTerms, parseRecycleRequest, parseRelayRequest } from './relay.js';
 
 const MAX_BODY = 16 * 1024;
 
@@ -8,6 +8,7 @@ const MAX_BODY = 16 * 1024;
  *   GET  /health   status
  *   GET  /quote    fee terms; clients bake these into the withdrawal they prove
  *   POST /relay    { withdrawal, proof, scope } -> { txHash }
+ *   POST /recycle  a signed SodiRecycler authorization -> { txHash }   (when a recycler is configured)
  */
 export function startServer(
   port: number,
@@ -35,6 +36,7 @@ export function startServer(
     relayFeeBPS: settings.relayFeeBPS.toString(),
     minWithdrawal: settings.minWithdrawal.toString(),
     minFee: (settings.minFee ?? 0n).toString(),
+    ...(settings.recycler ? { recycler: settings.recycler, recycleFee: (settings.recycleFee ?? 0n).toString() } : {}),
   };
 
   const server = createServer((req, res) => {
@@ -46,7 +48,7 @@ export function startServer(
 
     if (req.method === 'GET' && path === '/health') return send(200, { ok: true, chainId });
     if (req.method === 'GET' && path === '/quote') return send(200, quote);
-    if (req.method !== 'POST' || path !== '/relay') return send(404, { error: 'not found' });
+    if (req.method !== 'POST' || (path !== '/relay' && path !== '/recycle')) return send(404, { error: 'not found' });
     if (limited(req.socket.remoteAddress ?? 'unknown')) return send(429, { error: 'too many requests' });
 
     let raw = '';
@@ -61,6 +63,13 @@ export function startServer(
     req.on('end', async () => {
       if (tooBig) return send(413, { error: 'request too large' });
       try {
+        if (path === '/recycle') {
+          const parsed = parseRecycleRequest(JSON.parse(raw));
+          checkRecycleTerms(parsed, settings);
+          const txHash = await submitter.submitRecycle(parsed);
+          log(`recycled ${parsed.authorization.value} from ${parsed.authorization.from} in ${txHash}`);
+          return send(200, { txHash });
+        }
         const parsed = parseRelayRequest(JSON.parse(raw));
         const { recipient, withdrawn } = checkTerms(parsed, settings);
         const txHash = await submitter.submit(parsed);
@@ -69,7 +78,7 @@ export function startServer(
       } catch (err) {
         const status = err instanceof RelayError ? err.status : err instanceof SyntaxError ? 400 : 500;
         const message = err instanceof Error ? err.message : String(err);
-        log(`rejected relay (${status}): ${message}`);
+        log(`rejected ${path} (${status}): ${message}`);
         send(status, { error: status === 500 ? 'internal error' : message });
       }
     });

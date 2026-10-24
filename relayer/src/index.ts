@@ -40,6 +40,8 @@ async function main() {
     relayFeeBPS,
     minWithdrawal,
     minFee,
+    recycler: (process.env.RECYCLER ?? deployment.contracts.SodiRecycler) as Address | undefined,
+    recycleFee: BigInt(process.env.RECYCLE_FEE ?? minFee.toString()),
   };
 
   startServer(port, deployment.chainId, settings, new RelaySubmitter(publicClient, wallet, settings), log, {

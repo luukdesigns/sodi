@@ -44,7 +44,7 @@ Privacy strengthens as more agents share the pool. Smaller budgets and faster ro
 
 ```
 sodi/
-├── contracts/        Pool deployment and Sodi contracts (Foundry)
+├── contracts/        Pool deployment and the Sodi recycler (Foundry)
 ├── packages/
 │   ├── rx402/        Agent SDK: deposits, private sessions, x402 payments (@sodi/rx402)
 │   └── mcp/          MCP server: private x402 payments as agent tools (@sodi/mcp)
@@ -84,6 +84,7 @@ sodi/
 - [x] Relayer service and MCP server, tested together end to end on a testnet fork
 - [x] rx402 live on testnet: deposit, approval, relayed ZK sessions, ordinary and stealth x402 payments ([transactions](./contracts/deployments/46630.json))
 - [x] Owner dashboard: kill switch, spend limits, payment history ([dashboard](./dashboard))
+- [x] Recycling: leftover session funds and stealth payments go back into the pool with no gas at the address ([SodiRecycler](./contracts/README.md#sodirecycler))
 - [x] Session issuer: the agent holds only its own key; the pool secret and the hard limits live elsewhere ([issuer](./issuer))
 - [x] Public demo agent: buys data privately on a loop, with a live public page ([demo-agent](./demo-agent)); needs a server to stay up
 - [ ] Capped mainnet beta with partner merchants

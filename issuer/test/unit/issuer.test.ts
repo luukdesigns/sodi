@@ -39,6 +39,15 @@ async function setup(opts: { maxSessionBudget?: bigint; dailyLimit?: bigint; fee
       return { address: to, received, fundingTx: `0x${(++tx).toString(16).padStart(64, '0')}` as Hex };
     },
     poolBalance: () => pool,
+    reserved: 0,
+    landed: 0,
+    async reservePrecommitment() {
+      return BigInt(1000 + ++this.reserved);
+    },
+    async pendingReservations() {
+      return this.reserved - this.landed;
+    },
+    async sync() {},
   };
   const publicClient = {
     getChainId: async () => CHAIN,
@@ -215,5 +224,19 @@ describe('session issuer', () => {
     const s = await client.openSession();
     expect(client.currentSession()?.address).toBe(s.address);
     expect(t.funded).toEqual([{ budget: 250_000n, to: s.address }]);
+  });
+
+  it('reserves deposits for recycling, even while paused, but not without limit', async () => {
+    const t = await setup();
+    t.controls.save({ paused: true });
+    const first = await t.sessions().reservePrecommitment();
+    expect(first).toBe(1001n);
+    for (let i = 0; i < 7; i++) await t.sessions().reservePrecommitment();
+    await expect(t.sessions().reservePrecommitment()).rejects.toThrow(/8 reserved deposits haven't landed/);
+    t.fake.landed = 8;
+    expect(await t.sessions().reservePrecommitment()).toBe(1009n);
+    // Strangers can't reserve.
+    const stranger = new IssuerSessions({ url: t.url(), agentKey: generatePrivateKey(), publicClient: t.publicClient, asset: ASSET, store: new MemoryStore() });
+    await expect(stranger.reservePrecommitment()).rejects.toThrow(/not an allowed agent/);
   });
 });

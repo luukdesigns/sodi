@@ -17,6 +17,11 @@ import { type Address, getAddress, recoverMessageAddress } from 'viem';
 export interface PoolFunder {
   fund(budget: bigint, recipient: Address): Promise<Funding>;
   poolBalance(): bigint;
+  /** For recycling: a new deposit's precommitment. */
+  reservePrecommitment(): Promise<bigint>;
+  /** Reserved deposits not found on-chain yet. */
+  pendingReservations(): Promise<number>;
+  sync(): Promise<void>;
 }
 
 export interface IssuerConfig {
@@ -32,6 +37,8 @@ export interface IssuerConfig {
   maxSessionBudget: bigint;
   /** Cap on session funding per rolling 24 hours, on top of any in the controls file. */
   dailyLimit?: bigint;
+  /** Reserved deposits for recycling that may be outstanding at once (default 8). */
+  maxPendingReservations?: number;
   /** How far a request's timestamp may be from the issuer's clock, in seconds. */
   maxClockSkewSeconds?: number;
   now?: () => number;
@@ -40,7 +47,7 @@ export interface IssuerConfig {
 
 export interface IssuerReply {
   status: number;
-  body: IssuerFunding | IssuerStatus | IssuerError;
+  body: IssuerFunding | IssuerStatus | IssuerError | { precommitment: string };
 }
 
 class Refused extends Error {
@@ -101,6 +108,11 @@ export class SessionIssuer {
       const agent = await this.authenticate(signed);
       const { request } = signed;
       if (path === '/status' && request.type === 'status') return { status: 200, body: this.status() };
+      if (path === '/precommitment' && request.type === 'reserve-deposit') {
+        const run = this.queue.then(() => this.reserve(agent));
+        this.queue = run.catch(() => {});
+        return { status: 200, body: await run };
+      }
       if (path === '/sessions' && request.type === 'open-session') {
         // One funding at a time, so two requests can't both fit under the limit and then exceed it together.
         const run = this.queue.then(() => this.open(agent, request.address, BigInt(request.budget)));
@@ -141,6 +153,23 @@ export class SessionIssuer {
       fundedLast24h: this.fundedSince(this.now() - 86_400).toString(),
       poolBalance: this.config.pool.poolBalance().toString(),
     };
+  }
+
+  /**
+   * Gives an agent a precommitment for a new deposit of the owner's, so it can recycle a finished
+   * session back into the pool. Recycling only adds to the pool, so it's allowed even when funding is
+   * paused, but outstanding reservations are capped: each one is scanned for on every sync.
+   */
+  private async reserve(agent: Address): Promise<{ precommitment: string }> {
+    const { pool } = this.config;
+    const cap = this.config.maxPendingReservations ?? 8;
+    if ((await pool.pendingReservations()) >= cap) {
+      await pool.sync();
+      if ((await pool.pendingReservations()) >= cap) throw new Refused(429, 'bad-request', `${cap} reserved deposits haven't landed yet; recycle those first`);
+    }
+    const precommitment = await pool.reservePrecommitment();
+    this.log(`reserved a deposit for ${agent} to recycle into`);
+    return { precommitment: precommitment.toString() };
   }
 
   private async open(agent: Address, rawAddress: Address, budget: bigint): Promise<IssuerFunding> {

@@ -10,6 +10,7 @@ The relayer cannot steal or redirect funds. The recipient, fee recipient and fee
 | --- | --- |
 | `GET /quote` | `{ chainId, entrypoint, feeRecipient, relayFeeBPS, minWithdrawal }`. Clients build their withdrawal with these terms. |
 | `POST /relay` | `{ withdrawal, proof, scope }` → `{ txHash }` |
+| `POST /recycle` | A signed [SodiRecycler](../contracts/README.md#sodirecycler) authorization → `{ txHash }`. Offered when a recycler is configured; `/quote` then includes `recycler` and `recycleFee`. |
 | `GET /health` | |
 
 ## Checks before relaying
@@ -20,7 +21,9 @@ The relayer cannot steal or redirect funds. The recipient, fee recipient and fee
 4. The amount is at least `MIN_WITHDRAWAL`, and the fee at least `MIN_FEE`, so it doesn't pay gas for dust.
 5. The transaction is **simulated** first, so invalid proofs cost no gas. Transactions are sent one at a time to avoid nonce races.
 
-The `rx402` SDK talks to it with `HttpRelayer.connect(url)`.
+Recycles get the same treatment: the fee recipient must be this relayer, the fee at least `RECYCLE_FEE`, and the transaction is simulated before it is sent.
+
+The `rx402` SDK talks to it with `HttpRelayer.connect(url)`, and `relayer.recycleSubmitter({ recycler })` for recycles.
 
 ## Running
 
@@ -37,12 +40,13 @@ RELAYER_PRIVATE_KEY=0x... npm start
 | `FEE_RECIPIENT` | the relayer's address |
 | `MIN_WITHDRAWAL` | `100000` (0.1 USDG) |
 | `MIN_FEE` | `0` | Smallest fee, in base units; set it to cover gas before running a public relayer |
-| `RATE_LIMIT_PER_MINUTE` | `30` | Relay requests per IP per minute |
+| `RATE_LIMIT_PER_MINUTE` | `30` | Requests per IP per minute |
+| `RECYCLER` | from the deployment file | SodiRecycler address; recycles are refused without one |
+| `RECYCLE_FEE` | `MIN_FEE` | Fee per recycle, in base units, taken out of the recycled amount |
 | `HOST` | all interfaces | e.g. `127.0.0.1` behind a reverse proxy |
 | `PORT` | `8403` |
 
 ## Not done yet
 
-- Rate limiting and abuse protection. Simulation stops failed proofs costing gas, but not request floods.
-- Checking that the fee covers gas at current prices.
+- Checking that the fee covers gas at current prices; `MIN_FEE` and `RECYCLE_FEE` are set by hand.
 - Multiple signer keys for throughput.

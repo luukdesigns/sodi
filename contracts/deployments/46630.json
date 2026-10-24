@@ -12,7 +12,8 @@
     "CommitmentVerifier": "0x58E37acaf8B2B2f61c3A65E1db59A7dEcb879061",
     "EntrypointImplementation": "0xDcB02c8EF8057861f4fd37Becde9b1B2586F75f3",
     "Entrypoint": "0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce",
-    "USDGPool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76"
+    "USDGPool": "0x8cddbb1C33ce49aB72FD1765649835935604BF76",
+    "SodiRecycler": "0x2302B8751FC074F2fF7f3642d84be36438EF37AF"
   },
   "pools": {
     "USDG": {
@@ -49,5 +50,13 @@
       "stealth to 0x08bd2e500ab1C41f922e76709C8292f004082311": "0x0358393442097df7c5d2dddc664d4a4e610ede171d28a94d95b36ba6719e96c3",
       "stealth to 0x277e3B95A97Df85E1e1736C8bd91Dea3f665f070": "0x0be91637d0d4461fd096340b58330d55f6df7904e7fdb2d10d2e49462c33b688"
     }
+  },
+  "recycler": {
+    "address": "0x2302B8751FC074F2fF7f3642d84be36438EF37AF",
+    "deployedAt": "2026-10-24",
+    "block": 141918085,
+    "tx": "0x8c53c205ad366ff33850242fb41c2e84b989c77262ae49ce6b24c629a817e4b7",
+    "entrypoint": "0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce",
+    "asset": "0x7E955252E15c84f5768B83c41a71F9eba181802F"
   }
 }

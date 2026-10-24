@@ -8,6 +8,7 @@ const MAX_BODY = 4 * 1024;
  *   GET  /health     liveness
  *   POST /status     signed by an agent -> kill switch, limits, what's left
  *   POST /sessions   signed by an agent -> funds the agent's session address
+ *   POST /precommitment  signed by an agent -> a new deposit of the owner's to recycle a session into
  *
  * Listens on localhost by default. Put it behind HTTPS if the agent runs on another machine;
  * requests are signed and carry only public data, but TLS keeps the timing of sessions private.
@@ -31,7 +32,7 @@ export function startServer(issuer: SessionIssuer, port: number, host = '127.0.0
     };
     const path = (req.url ?? '/').split('?')[0]!;
     if (req.method === 'GET' && path === '/health') return send(200, { ok: true });
-    if (req.method !== 'POST' || (path !== '/sessions' && path !== '/status')) return send(404, { error: 'not found' });
+    if (req.method !== 'POST' || !['/sessions', '/status', '/precommitment'].includes(path)) return send(404, { error: 'not found' });
     if (limited(req.socket.remoteAddress ?? 'unknown')) return send(429, { error: 'too many requests' });
 
     let raw = '';

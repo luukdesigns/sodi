@@ -2,7 +2,7 @@
 
 Deployment of the shielded USDG pool on Robinhood Chain.
 
-The pool is [0xbow Privacy Pools](https://github.com/0xbow-io/privacy-pools-core), used **unchanged**: the audited contracts are compiled from the pinned submodule with the same compiler settings as upstream (solc 0.8.28, optimizer 10,000 runs). Sodi adds only the deployment script and tests.
+The pool is [0xbow Privacy Pools](https://github.com/0xbow-io/privacy-pools-core), used **unchanged**: the audited contracts are compiled from the pinned submodule with the same compiler settings as upstream (solc 0.8.28, optimizer 10,000 runs). Sodi adds the deployment script, tests, and one contract of its own beside the pool, the [recycler](#sodirecycler).
 
 ## Layout
 
@@ -15,8 +15,9 @@ contracts/
 │   ├── zk-kit.solidity       lean-imt.sol v2.0.0
 │   ├── poseidon-solidity     v0.0.5
 │   └── forge-std             v1.9.6
+├── src/SodiRecycler.sol      Puts leftover funds back into the pool, gaslessly
 ├── script/DeployUSDGPool.s.sol
-└── test/DeployUSDGPool.t.sol
+└── test/                     Pool deployment and recycler tests
 ```
 
 Dependency versions match those pinned by upstream Privacy Pools.
@@ -45,8 +46,19 @@ forge test
 | WithdrawalVerifier | `0x2740523E66d4a74002B8e11c839AbbF86A084c71` |
 | CommitmentVerifier | `0x58E37acaf8B2B2f61c3A65E1db59A7dEcb879061` |
 | USDG (asset) | `0x7E955252E15c84f5768B83c41a71F9eba181802F` |
+| SodiRecycler | [`0x2302B8751FC074F2fF7f3642d84be36438EF37AF`](https://explorer.testnet.chain.robinhood.com/address/0x2302B8751FC074F2fF7f3642d84be36438EF37AF) |
 
 Owner and postman are the testnet deployer, `0xF4411EC2705299FCe6f6Cd99e432AEe88382BF4d`. Full details in [`deployments/46630.json`](./deployments/46630.json); transaction logs in `broadcast/`.
+
+## SodiRecycler
+
+Puts funds left at an address back into the pool: an rx402 session that has rotated, or a merchant's stealth address. The address never needs gas.
+
+- The address signs an EIP-3009 `ReceiveWithAuthorization` paying the recycler, whose nonce commits to the new deposit's precommitment and the submitter's fee. Only the recycler can execute it, and only with that deposit, so whoever submits it (a [relayer](../relayer), usually) the funds can only become the deposit the owner chose.
+- The pool records the recycler as the depositor, so the recycler also forwards ragequits, and a ragequit can only send the funds back to the address they came from.
+- No owner, nothing held between calls. Amounts below the pool's minimum deposit can't be recycled.
+
+Tests (`forge test --match-contract SodiRecycler`), against a full local deployment of the pool: recycling with a fee, a front-runner swapping the deposit, a submitter raising its fee, moving the funds around the recycler, replays, dust below the minimum, and ragequits (with the ragequit verifier mocked). The [issuer's fork test](../issuer/test/e2e/recycle.test.ts) recycles real sessions through the relayer on a testnet fork.
 
 ## What the deploy script does
 

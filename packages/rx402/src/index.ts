@@ -3,11 +3,25 @@ export {
   type IssuedRx402Config,
   type LocalRx402Config,
   type PaidResponse,
+  type RecycleOutcome,
   type Rx402Config,
   type SessionPolicy,
   type SessionSource,
 } from './client.js';
 export { PoolWallet, type Funding, type PoolWalletConfig } from './wallet.js';
+export {
+  type RecycleRequest,
+  type RecycleSubmitter,
+  type TokenDomain,
+  USDG_DOMAIN,
+  WalletRecycleSubmitter,
+  recycleArgs,
+  recycleFrom,
+  recycleMinimum,
+  recycleNonce,
+  recyclerAbi,
+  signRecycle,
+} from './recycle.js';
 export {
   IssuerSessions,
   type IssuerError,
@@ -34,7 +48,7 @@ export {
 } from './controls.js';
 export * from './x402.js';
 export * from './crypto.js';
-export { entrypointAbi, erc20Abi, poolAbi } from './chain.js';
+export { depositedEvent, entrypointAbi, erc20Abi, poolAbi } from './chain.js';
 export { HttpRelayer, type RelayQuote } from './http-relayer.js';
 
 /** Fetches approved labels from a Sodi approval service (`GET /association-set`). */

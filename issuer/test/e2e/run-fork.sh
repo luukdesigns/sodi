@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the session issuer end-to-end test against a local fork of Robinhood Chain testnet.
+# Runs the session issuer and recycling end-to-end tests against a local fork of Robinhood Chain testnet.
 #
 #   POSTMAN_PRIVATE_KEY=0x... ./test/e2e/run-fork.sh
 #
@@ -20,4 +20,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-FORK_RPC="http://127.0.0.1:$PORT" npx vitest run test/e2e
+# The recycle test deploys SodiRecycler from the contracts build.
+[ -f ../contracts/out/SodiRecycler.sol/SodiRecycler.json ] || (cd ../contracts && forge build)
+
+FORK_RPC="http://127.0.0.1:$PORT" npx vitest run test/e2e --no-file-parallelism

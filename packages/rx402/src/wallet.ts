@@ -1,4 +1,4 @@
-import { type Address, type Hex, type PublicClient, type WalletClient, encodeAbiParameters, parseEventLogs } from 'viem';
+import { type Address, type Hex, type LocalAccount, type PublicClient, type WalletClient, encodeAbiParameters, parseEventLogs } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
@@ -15,6 +15,7 @@ import {
   withdrawalSecrets,
 } from './crypto.js';
 import type { WithdrawalProver } from './prover.js';
+import { type RecycleSubmitter, type TokenDomain, USDG_DOMAIN, recycleFrom } from './recycle.js';
 import type { Relayer } from './relayer.js';
 import type { PoolNote, Session, Store, WalletState } from './store.js';
 
@@ -163,6 +164,72 @@ export class PoolWallet {
     state.notes.push(note);
     store.save(state);
     return note;
+  }
+
+  /**
+   * Reserves the next deposit's secrets for a deposit made somewhere else, such as an agent recycling
+   * a session through a session issuer. Returns its precommitment; the note is picked up from the
+   * chain by the next sync.
+   */
+  reservePrecommitment(): Promise<bigint> {
+    return this.exclusive(async () => {
+      const scope = await this.getScope();
+      const state = this.config.store.load();
+      const index = state.depositCounts[scope.toString()] ?? 0;
+      state.depositCounts[scope.toString()] = index + 1;
+      this.config.store.save(state);
+      return precommitmentHash(depositSecrets(this.keys, scope, BigInt(index)));
+    });
+  }
+
+  /** Deposits reserved (or sent) whose note hasn't been found on-chain yet, as of the last sync. */
+  async pendingReservations(): Promise<number> {
+    const scope = (await this.getScope()).toString();
+    const state = this.config.store.load();
+    return (state.depositCounts[scope] ?? 0) - state.notes.filter((n) => n.scope === scope).length;
+  }
+
+  /**
+   * Moves everything `account` holds back into the pool as a new deposit of this wallet's, through
+   * the SodiRecycler: `account` signs, `submitter` sends the transaction, so `account` needs no gas.
+   * Works for any address whose key you hold: an old session, or a merchant's stealth address.
+   *
+   * The recycle itself is public (this address put this amount into the pool); like any deposit, what
+   * happens to it afterwards isn't.
+   */
+  recycle(account: LocalAccount, submitter: RecycleSubmitter, opts: { domain?: TokenDomain; value?: bigint } = {}): Promise<PoolNote> {
+    return this.exclusive(async () => {
+      const { publicClient, asset, store, pool } = this.config;
+      const value = opts.value ?? (await publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [account.address] }));
+      if (value === 0n) throw new Error(`${account.address} holds nothing to recycle`);
+      const scope = await this.getScope();
+      let state = store.load();
+      const index = state.depositCounts[scope.toString()] ?? 0;
+      const secrets = depositSecrets(this.keys, scope, BigInt(index));
+      // Reserve first: a crash after sending must never reuse these secrets, and sync() recovers the note.
+      state.depositCounts[scope.toString()] = index + 1;
+      store.save(state);
+
+      const hash = await recycleFrom(account, {
+        publicClient,
+        asset,
+        domain: opts.domain ?? USDG_DOMAIN,
+        submitter,
+        value,
+        precommitment: precommitmentHash(secrets),
+        now: this.now(),
+      });
+      const receipt = await publicClient.getTransactionReceipt({ hash });
+      const [event] = parseEventLogs({ abi: [depositedEvent], logs: receipt.logs }).filter((l) => l.address.toLowerCase() === pool.toLowerCase());
+      if (!event) throw new Error(`recycle ${hash} made no deposit in the pool`);
+      const { _label: label, _value: deposited, _commitment: commitment } = event.args;
+      if (commitmentHash(deposited, label, secrets) !== commitment) throw new Error('recycled deposit does not match locally derived secrets');
+      const note: PoolNote = { scope: scope.toString(), depositIndex: index, label: label.toString(), value: deposited.toString(), spendCount: 0, depositTx: hash };
+      state = store.load();
+      state.notes.push(note);
+      store.save(state);
+      return note;
+    });
   }
 
   /** Re-adds deposits that landed on-chain but whose note was never saved (e.g. a crash). */

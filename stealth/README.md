@@ -110,7 +110,7 @@ Agents need nothing new. `Rx402Client` pays stealth addresses whenever a merchan
 - **Hidden:** which payments went to which merchant, and a merchant's total revenue. Its public address never receives anything.
 - **Visible:** amounts, timing, and the paying session. rx402 is what keeps the session unlinked from the agent's owner.
 - **Whoever pays settlement gas is visible.** If a merchant settles every payment from its own wallet, that wallet links its stealth addresses. Settle through a facilitator that many merchants share.
-- **Sweeping can re-link.** Moving many stealth addresses to one destination, or all at once, ties them back together. Sweep to different destinations, at different times, or into a privacy pool.
+- **Sweeping can re-link.** Moving many stealth addresses to one destination, or all at once, ties them back together. Sweep to different destinations, at different times, or into a privacy pool: the [recycler](../contracts/README.md#sodirecycler) deposits one stealth address's balance into the pool with no gas at that address (see the [rx402 README](../packages/rx402/README.md#recycling-leftover-funds)).
 - **The viewing key sees all incoming payments.** It can't spend them, but treat it as confidential.
 - **The key signature is the spending key.** Keys are derived from a wallet signature, so anyone who obtains that signature can spend. The message says so. Wallets that sign non-deterministically are refused, since their meta-address would change every time.
 

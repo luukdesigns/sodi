@@ -4,12 +4,25 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 import { type ControlSource, type Controls, PaymentBlockedError } from './controls.js';
 import type { PaymentRecord, PoolNote, Session, Store, WalletState } from './store.js';
+import { erc20Abi } from './chain.js';
+import { type RecycleSubmitter, type TokenDomain, USDG_DOMAIN, recycleFrom, recycleMinimum } from './recycle.js';
 import { PoolWallet, type PoolWalletConfig } from './wallet.js';
+import { MAX_VALIDITY_SECONDS } from './x402.js';
 import { paymentHeader, parsePaymentRequired, selectRequirement, signAuthorization } from './x402.js';
 
 /** Where new sessions come from: the pool wallet in-process, or a session issuer. */
 export interface SessionSource {
   open(budget: bigint): Promise<Session>;
+  /** Reserves a deposit in the owner's pool for recycling a session, and returns its precommitment. */
+  reservePrecommitment?(): Promise<bigint>;
+}
+
+export interface RecycleOutcome {
+  session: Address;
+  amount: bigint;
+  status: 'recycled' | 'empty' | 'too-small' | 'failed';
+  tx?: Hex;
+  error?: string;
 }
 
 export interface SessionPolicy {
@@ -82,7 +95,7 @@ export class Rx402Client {
     } else {
       const wallet = new PoolWallet(config);
       this.wallet = wallet;
-      this.sessions = { open: (budget) => wallet.openSession(budget) };
+      this.sessions = { open: (budget) => wallet.openSession(budget), reservePrecommitment: () => wallet.reservePrecommitment() };
     }
   }
 
@@ -156,6 +169,61 @@ export class Rx402Client {
     state.sessions = [...state.sessions.filter((s) => s.address !== session.address), session];
     store.save(state);
     return session;
+  }
+
+  /**
+   * Puts what's left in finished sessions back into the pool, as new deposits of the owner's, through
+   * the SodiRecycler. The current session is left alone, and so is any session that signed a payment
+   * recently: a merchant may still settle it, so its funds must stay until every authorization it
+   * signed has expired.
+   *
+   * Each recycle is public (this session put this amount into the pool) and is submitted by
+   * `submitter`, so use a shared relayer. Sessions holding less than the pool's minimum deposit plus
+   * the submitter's fee can't be recycled and are reported as `too-small`.
+   */
+  recycleSessions(opts: { submitter: RecycleSubmitter; domain?: TokenDomain; idleSeconds?: number }): Promise<RecycleOutcome[]> {
+    return this.exclusive(async () => {
+      const { publicClient, asset, store } = this.config;
+      const reserve = this.sessions.reservePrecommitment?.bind(this.sessions);
+      if (!reserve) throw new Error('this session source cannot reserve deposits for recycling');
+      const idle = Math.max(opts.idleSeconds ?? 600, MAX_VALIDITY_SECONDS + 60);
+      const minimum = (await recycleMinimum(publicClient, opts.submitter.recycler)) + opts.submitter.recycleFee;
+      const state = store.load();
+      const current = state.sessions.at(-1)?.address;
+      const outcomes: RecycleOutcome[] = [];
+      for (const s of state.sessions) {
+        if (s.address === current || s.recycledTx) continue;
+        const lastSigned = Math.max(s.openedAt, ...(state.payments ?? []).filter((p) => p.session === s.address).map((p) => p.at));
+        if (this.now() - lastSigned < idle) continue;
+        const amount = await publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [s.address] });
+        if (amount === 0n) {
+          outcomes.push({ session: s.address, amount, status: 'empty' });
+          continue;
+        }
+        if (amount < minimum) {
+          outcomes.push({ session: s.address, amount, status: 'too-small' });
+          continue;
+        }
+        try {
+          const account = privateKeyToAccount(s.privateKey);
+          let tx: Hex;
+          if (this.wallet) {
+            tx = (await this.wallet.recycle(account, opts.submitter, { domain: opts.domain, value: amount })).depositTx;
+          } else {
+            const precommitment = await reserve();
+            tx = await recycleFrom(account, { publicClient, asset, domain: opts.domain ?? USDG_DOMAIN, submitter: opts.submitter, value: amount, precommitment, now: this.now() });
+          }
+          const latest = store.load();
+          const rec = latest.sessions.find((x) => x.address === s.address);
+          if (rec) rec.recycledTx = tx;
+          store.save(latest);
+          outcomes.push({ session: s.address, amount, status: 'recycled', tx });
+        } catch (err) {
+          outcomes.push({ session: s.address, amount, status: 'failed', error: (err as Error).message.split('\n')[0] });
+        }
+      }
+      return outcomes;
+    });
   }
 
   /** The current session if it can still pay `amount` under the rotation policy. */

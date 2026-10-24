@@ -8,7 +8,7 @@ import {
   isHex,
 } from 'viem';
 
-import { entrypointAbi, poolAbi } from '@sodi/rx402';
+import { type RecycleRequest, entrypointAbi, poolAbi, recycleArgs, recyclerAbi } from '@sodi/rx402';
 
 export interface RelayerSettings {
   entrypoint: Address;
@@ -21,6 +21,10 @@ export interface RelayerSettings {
   minWithdrawal: bigint;
   /** Smallest fee worth relaying for (asset base units), so the fee covers the relayer's gas. */
   minFee?: bigint;
+  /** SodiRecycler contract; recycles are accepted only when set. */
+  recycler?: Address;
+  /** Fee per recycle (asset base units), taken out of the recycled amount. */
+  recycleFee?: bigint;
 }
 
 export interface RelayRequest {
@@ -110,6 +114,42 @@ export function checkTerms(req: RelayRequest, s: RelayerSettings): { recipient: 
   return { recipient, withdrawn };
 }
 
+const hex = (v: unknown, what: string, bytes?: number): Hex => {
+  if (!isHex(v) || (bytes !== undefined && v.length !== 2 + bytes * 2)) throw new RelayError(`invalid ${what}`);
+  return v;
+};
+
+/** Parses untrusted JSON into a recycle request, rejecting anything malformed. */
+export function parseRecycleRequest(body: unknown): RecycleRequest {
+  const b = body as Record<string, any>;
+  const a = b?.authorization;
+  if (!a || !isAddress(a.from) || !isAddress(b.feeRecipient)) throw new RelayError('invalid recycle request');
+  if (a.v !== 27 && a.v !== 28) throw new RelayError('invalid authorization.v');
+  const dec = (v: unknown, what: string) => big(v, what).toString();
+  return {
+    authorization: {
+      from: a.from,
+      value: dec(a.value, 'authorization.value'),
+      validAfter: dec(a.validAfter, 'authorization.validAfter'),
+      validBefore: dec(a.validBefore, 'authorization.validBefore'),
+      nonce: hex(a.nonce, 'authorization.nonce', 32),
+      v: a.v,
+      r: hex(a.r, 'authorization.r', 32),
+      s: hex(a.s, 'authorization.s', 32),
+    },
+    precommitment: dec(b.precommitment, 'precommitment'),
+    fee: dec(b.fee, 'fee'),
+    feeRecipient: b.feeRecipient,
+  };
+}
+
+/** A recycle on our terms: we accept them, our fee recipient, at least our fee. */
+export function checkRecycleTerms(req: RecycleRequest, s: RelayerSettings): void {
+  if (!s.recycler) throw new RelayError('this relayer does not submit recycles', 404);
+  if (req.feeRecipient.toLowerCase() !== s.feeRecipient.toLowerCase()) throw new RelayError('fee recipient must be this relayer');
+  if (BigInt(req.fee) < (s.recycleFee ?? 0n)) throw new RelayError(`recycle fee below ${s.recycleFee}`);
+}
+
 /**
  * Simulates every request first, so invalid proofs cost no gas, then sends them one at a time so
  * they never race on the relayer's nonce. Simulations run concurrently: junk requests can't hold up
@@ -126,29 +166,43 @@ export class RelaySubmitter {
     private readonly maxInFlight = 32,
   ) {}
 
-  async submit(req: RelayRequest): Promise<Hex> {
+  submit(req: RelayRequest): Promise<Hex> {
+    return this.simulateAndSend('withdrawal', () =>
+      this.publicClient.simulateContract({
+        address: this.settings.entrypoint,
+        abi: entrypointAbi,
+        functionName: 'relay',
+        args: [req.withdrawal, req.proof, req.scope],
+        account: this.wallet.account!,
+      }),
+    );
+  }
+
+  submitRecycle(req: RecycleRequest): Promise<Hex> {
+    if (!this.settings.recycler) throw new RelayError('this relayer does not submit recycles', 404);
+    const recycler = this.settings.recycler;
+    return this.simulateAndSend('recycle', () =>
+      this.publicClient.simulateContract({ address: recycler, abi: recyclerAbi, functionName: 'recycle', args: recycleArgs(req), account: this.wallet.account! }),
+    );
+  }
+
+  private async simulateAndSend(what: string, simulate: () => Promise<{ request: any }>): Promise<Hex> {
     if (this.inFlight >= this.maxInFlight) throw new RelayError('relayer is busy; try again shortly', 503);
     this.inFlight++;
     try {
       const account = this.wallet.account!;
       let request;
       try {
-        ({ request } = await this.publicClient.simulateContract({
-          address: this.settings.entrypoint,
-          abi: entrypointAbi,
-          functionName: 'relay',
-          args: [req.withdrawal, req.proof, req.scope],
-          account,
-        }));
+        ({ request } = await simulate());
       } catch (err) {
         const reason = err instanceof Error ? (err as { shortMessage?: string }).shortMessage ?? err.message : String(err);
-        throw new RelayError(`withdrawal would revert: ${reason}`, 422);
+        throw new RelayError(`${what} would revert: ${reason}`, 422);
       }
       const send = this.sending.then(() => this.wallet.writeContract({ ...request, account, chain: this.wallet.chain }));
       this.sending = send.catch(() => {});
       const hash = await send;
       const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== 'success') throw new RelayError(`relay reverted: ${hash}`, 502);
+      if (receipt.status !== 'success') throw new RelayError(`${what} reverted: ${hash}`, 502);
       return hash;
     } finally {
       this.inFlight--;

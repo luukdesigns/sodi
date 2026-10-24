@@ -1,7 +1,7 @@
 import { encodeAbiParameters } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import { RelaySubmitter, type RelayerSettings, checkTerms, parseRelayRequest } from '../src/relay.js';
+import { RelaySubmitter, type RelayerSettings, checkRecycleTerms, checkTerms, parseRecycleRequest, parseRelayRequest } from '../src/relay.js';
 import { startServer } from '../src/server.js';
 
 const ENTRYPOINT = '0xaCa6B50b648a6f575a009DC7c97aBe62808869Ce';
@@ -118,5 +118,58 @@ describe('abuse resistance', () => {
     }
     server.close();
     expect(codes).toEqual([400, 400, 400, 429, 429]);
+  });
+});
+
+describe('recycles', () => {
+  const RECYCLER = '0x00000000000000000000000000000000000000Cc';
+  const withRecycler: RelayerSettings = { ...settings, recycler: RECYCLER, recycleFee: 2_000n };
+  const word = `0x${'11'.repeat(32)}`;
+  const recycle = (over: Record<string, unknown> = {}) => ({
+    authorization: { from: SESSION, value: '3000000', validAfter: '0', validBefore: '1800000300', nonce: word, v: 27, r: word, s: word },
+    precommitment: '12345',
+    fee: '2000',
+    feeRecipient: RELAYER,
+    ...over,
+  });
+
+  it('accepts a recycle on our terms', () => {
+    const r = parseRecycleRequest(recycle());
+    expect(r.authorization.value).toBe('3000000');
+    expect(() => checkRecycleTerms(r, withRecycler)).not.toThrow();
+  });
+
+  it.each([
+    ['someone else as fee recipient', { feeRecipient: SESSION }, /fee recipient/],
+    ['a fee below ours', { fee: '1999' }, /recycle fee below/],
+  ])('rejects %s', (_, over, msg) => {
+    expect(() => checkRecycleTerms(parseRecycleRequest(recycle(over)), withRecycler)).toThrow(msg);
+  });
+
+  it('rejects malformed recycles', () => {
+    expect(() => parseRecycleRequest(recycle({ authorization: { ...recycle().authorization, v: 1 } }))).toThrow(/authorization.v/);
+    expect(() => parseRecycleRequest(recycle({ authorization: { ...recycle().authorization, nonce: '0x12' } }))).toThrow(/nonce/);
+    expect(() => parseRecycleRequest(recycle({ precommitment: 'abc' }))).toThrow(/precommitment/);
+    expect(() => parseRecycleRequest({})).toThrow(/invalid recycle/);
+  });
+
+  it('refuses recycles unless a recycler is configured, and quotes its terms when it is', async () => {
+    expect(() => checkRecycleTerms(parseRecycleRequest(recycle()), settings)).toThrow(/does not submit recycles/);
+    const submitter = { submitRecycle: async () => '0xabc' } as never;
+    const off = startServer(18642, 46630, settings, submitter, () => {}, { host: '127.0.0.1' });
+    const on = startServer(18643, 46630, withRecycler, submitter, () => {}, { host: '127.0.0.1' });
+    try {
+      const post = (port: number) => fetch(`http://127.0.0.1:${port}/recycle`, { method: 'POST', body: JSON.stringify(recycle()) });
+      expect((await post(18642)).status).toBe(404);
+      const ok = await post(18643);
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ txHash: '0xabc' });
+      const quote = (await (await fetch('http://127.0.0.1:18643/quote')).json()) as Record<string, string>;
+      expect(quote).toMatchObject({ recycler: RECYCLER, recycleFee: '2000' });
+      expect(await (await fetch('http://127.0.0.1:18642/quote')).json()).not.toHaveProperty('recycler');
+    } finally {
+      off.close();
+      on.close();
+    }
   });
 });

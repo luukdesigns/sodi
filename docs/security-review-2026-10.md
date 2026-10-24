@@ -102,6 +102,7 @@ Each finding above "low" came with a demonstration: a failing Foundry test, a vi
 ## Since the review
 
 - **The pool secret on the agent's machine.** The review took the agent's host as trusted. An agent holding the mnemonic can withdraw the whole pool, and its caps are enforced in its own code. The new [session issuer](../issuer) holds the mnemonic and the hard limits elsewhere; the agent holds only a key that can ask for sessions. Tests: `issuer/test`.
+- **Leftover funds.** The new [SodiRecycler](../contracts/README.md#sodirecycler) puts leftover session funds and stealth payments back into the pool. Its authorization binds the deposit and the fee, so a front-runner or the relayer can't redirect it, and a ragequit can only return funds to where they came from. The client won't recycle a session while a payment it signed could still be settled. Tests: `contracts/test/SodiRecycler.t.sol`, `issuer/test/e2e/recycle.test.ts`.
 
 ## Open and accepted
 

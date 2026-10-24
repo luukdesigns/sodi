@@ -17,7 +17,9 @@ import type { Session, Store } from './store.js';
  */
 export type IssuerRequest =
   | { type: 'open-session'; chainId: number; address: Address; budget: string; issuedAt: number }
-  | { type: 'status'; chainId: number; issuedAt: number };
+  | { type: 'status'; chainId: number; issuedAt: number }
+  /** Reserve a deposit in the owner's pool, to recycle a finished session into. */
+  | { type: 'reserve-deposit'; chainId: number; issuedAt: number };
 
 export interface SignedIssuerRequest {
   request: IssuerRequest;
@@ -59,9 +61,9 @@ export function parseIssuerRequest(body: unknown): SignedIssuerRequest {
   const r = b?.request as Record<string, unknown> | undefined;
   if (!r || typeof b?.signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(b.signature)) throw new Error('expected { request, signature }');
   if (!Number.isSafeInteger(r.chainId) || !Number.isSafeInteger(r.issuedAt)) throw new Error('chainId and issuedAt must be integers');
-  if (r.type === 'status') {
+  if (r.type === 'status' || r.type === 'reserve-deposit') {
     if (Object.keys(r).length !== 3) throw new Error('unexpected fields');
-    return { request: { type: 'status', chainId: r.chainId as number, issuedAt: r.issuedAt as number }, signature: b.signature as Hex };
+    return { request: { type: r.type, chainId: r.chainId as number, issuedAt: r.issuedAt as number }, signature: b.signature as Hex };
   }
   if (r.type === 'open-session') {
     if (Object.keys(r).length !== 5) throw new Error('unexpected fields');
@@ -144,6 +146,12 @@ export class IssuerSessions {
   /** The issuer's kill switch, limits and what's left in the pool. */
   async status(): Promise<IssuerStatus> {
     return this.send<IssuerStatus>('/status', { type: 'status', chainId: await this.getChainId(), issuedAt: this.now() });
+  }
+
+  /** Asks the issuer for a fresh deposit precommitment of the owner's, to recycle a session into. */
+  async reservePrecommitment(): Promise<bigint> {
+    const r = await this.send<{ precommitment: string }>('/precommitment', { type: 'reserve-deposit', chainId: await this.getChainId(), issuedAt: this.now() });
+    return BigInt(r.precommitment);
   }
 
   /**

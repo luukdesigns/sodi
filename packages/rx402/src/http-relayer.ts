@@ -2,6 +2,7 @@ import type { Address, Hex } from 'viem';
 
 import type { Withdrawal } from './crypto.js';
 import type { SolidityProof } from './prover.js';
+import type { RecycleRequest, RecycleSubmitter } from './recycle.js';
 import type { Relayer } from './relayer.js';
 
 export interface RelayQuote {
@@ -10,6 +11,9 @@ export interface RelayQuote {
   feeRecipient: Address;
   relayFeeBPS: string;
   minWithdrawal: string;
+  /** Present when the relayer submits recycles. */
+  recycler?: Address;
+  recycleFee?: string;
 }
 
 /**
@@ -43,6 +47,30 @@ export class HttpRelayer implements Relayer {
     const fee = BigInt(quote.relayFeeBPS);
     if (expect.maxFeeBPS !== undefined && fee > expect.maxFeeBPS) throw new Error(`relayer fee ${fee} bps is above the expected ${expect.maxFeeBPS}`);
     return new HttpRelayer(baseUrl, quote.feeRecipient, fee, quote);
+  }
+
+  /**
+   * Submits recycles through this relayer, if it offers them. Pin the recycler you expect: a relayer
+   * could otherwise point clients at a contract of its own.
+   */
+  recycleSubmitter(expect: { recycler: Address; maxFee?: bigint }): RecycleSubmitter {
+    const { recycler, recycleFee } = this.quote;
+    if (!recycler) throw new Error('this relayer does not submit recycles');
+    if (recycler.toLowerCase() !== expect.recycler.toLowerCase()) throw new Error(`relayer uses recycler ${recycler}, not ${expect.recycler}`);
+    const fee = BigInt(recycleFee ?? '0');
+    if (expect.maxFee !== undefined && fee > expect.maxFee) throw new Error(`relayer recycle fee ${fee} is above ${expect.maxFee}`);
+    const baseUrl = this.baseUrl;
+    return {
+      recycler: expect.recycler,
+      recycleFee: fee,
+      feeRecipient: this.feeRecipient,
+      async recycle(req: RecycleRequest): Promise<Hex> {
+        const res = await fetch(new URL('/recycle', baseUrl), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req) });
+        const body = (await res.json()) as { txHash?: Hex; error?: string };
+        if (!res.ok || !body.txHash) throw new Error(`relayer rejected the recycle: ${body.error ?? res.status}`);
+        return body.txHash;
+      },
+    };
   }
 
   async relay(withdrawal: Withdrawal, proof: SolidityProof, scope: bigint): Promise<Hex> {

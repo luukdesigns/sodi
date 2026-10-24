@@ -31,6 +31,8 @@ export interface Session {
   payments: number;
   openedAt: number;
   fundingTx: Hex;
+  /** Set once what was left in the session has been recycled into the pool. */
+  recycledTx?: Hex;
 }
 
 /** One x402 payment, kept for the owner's history. */
