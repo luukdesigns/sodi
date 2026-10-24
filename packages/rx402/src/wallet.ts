@@ -4,6 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { depositedEvent, entrypointAbi, erc20Abi, findDeposit, findWithdrawal, latestAspRoot, poolAbi, stateTreeLeaves } from './chain.js';
 import {
   type MasterKeys,
+  type Withdrawal,
   commitmentHash,
   depositSecrets,
   generateMasterKeys,
@@ -14,7 +15,7 @@ import {
   withdrawalContext,
   withdrawalSecrets,
 } from './crypto.js';
-import type { WithdrawalProver } from './prover.js';
+import type { SolidityProof, WithdrawalProver } from './prover.js';
 import { type RecycleSubmitter, type TokenDomain, USDG_DOMAIN, recycleFrom } from './recycle.js';
 import type { Relayer } from './relayer.js';
 import type { PoolNote, Session, Store, WalletState } from './store.js';
@@ -323,7 +324,25 @@ export class PoolWallet {
     });
   }
 
-  private async withdrawLocked(budget: bigint, recipient?: Address): Promise<{ session: Session } | { funding: Funding }> {
+  /**
+   * Withdraws `value` with a withdrawal processed by a contract of your own instead of the Entrypoint's
+   * relay: the proof commits to `processooor` and `data`, and `submit` must get `processooor` to call
+   * the pool's `withdraw` (for example the yield pool's SessionFunder, called by a relayer). Returns
+   * the transaction once the chain shows the withdrawal.
+   */
+  withdrawVia(value: bigint, processooor: Address, data: Hex, submit: (withdrawal: Withdrawal, proof: SolidityProof) => Promise<Hex>): Promise<Hex> {
+    return this.exclusive(async () => {
+      const r = await this.withdrawLocked(value, undefined, { processooor, data, submit });
+      if (!('custom' in r)) throw new Error('unreachable');
+      return r.custom;
+    });
+  }
+
+  private async withdrawLocked(
+    budget: bigint,
+    recipient?: Address,
+    custom?: { processooor: Address; data: Hex; submit: (withdrawal: Withdrawal, proof: SolidityProof) => Promise<Hex> },
+  ): Promise<{ session: Session } | { funding: Funding } | { custom: Hex }> {
     const { publicClient, entrypoint, pool, relayer, prover, store } = this.config;
     if (budget <= 0n) throw new Error('budget must be positive');
 
@@ -356,13 +375,15 @@ export class PoolWallet {
     }
 
     const target = recipient ?? privateKeyToAccount(sessionPrivateKey(this.keys, label, BigInt(spendIndex))).address;
-    const withdrawal = {
-      processooor: entrypoint,
-      data: encodeAbiParameters(
-        [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }] }],
-        [[target, relayer.feeRecipient, relayer.relayFeeBPS]],
-      ),
-    };
+    const withdrawal: Withdrawal = custom
+      ? { processooor: custom.processooor, data: custom.data }
+      : {
+          processooor: entrypoint,
+          data: encodeAbiParameters(
+            [{ type: 'tuple', components: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }] }],
+            [[target, relayer.feeRecipient, relayer.relayFeeBPS]],
+          ),
+        };
 
     const { proof } = await prover.prove({
       withdrawnValue: budget,
@@ -378,7 +399,7 @@ export class PoolWallet {
     // Nothing is saved until the chain confirms the withdrawal, whatever the relayer reports.
     let relayError: unknown;
     try {
-      const hash = await relayer.relay(withdrawal, proof, scope);
+      const hash = custom ? await custom.submit(withdrawal, proof) : await relayer.relay(withdrawal, proof, scope);
       await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 }).catch(() => undefined);
     } catch (err) {
       relayError = err;
@@ -392,6 +413,7 @@ export class PoolWallet {
         `the session withdrawal did not land${relayError ? `: ${(relayError as Error).message}` : ' (the relayer reported a transaction the chain does not show)'}`,
       );
     }
+    if (custom) return { custom: landed.txHash };
     if (landed.recipient?.toLowerCase() !== target.toLowerCase()) {
       throw new Error(`withdrawal ${landed.txHash} paid ${landed.recipient}, not ${target}`);
     }

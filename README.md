@@ -88,6 +88,7 @@ sodi/
 - [x] Session issuer: the agent holds only its own key; the pool secret and the hard limits live elsewhere ([issuer](./issuer))
 - [x] Public demo agent: buys data privately on a loop, with a live public page ([demo-agent](./demo-agent)); needs a server to stay up
 - [ ] Capped mainnet beta with partner merchants
+- [ ] Yield pool: the pool earns Morpho interest, so savers deepen the anonymity set ([design and prototype](./docs/yield-pool-design.md))
 - [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))
 
 ## Security
