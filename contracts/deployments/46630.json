@@ -219,6 +219,30 @@
           "tx": "0x2e50b7f34a227aae0c0148ee3cbf8cdf13a5d0807cf8b674e03b26142d7e7e48"
         }
       ]
+    },
+    "hostedRun": {
+      "description": "packages/inference-gateway/demo/live-hosted.ts, run 2026-10-25 against the hosted services with a real model (OpenRouter, no-retention routing, quoted and routed at a provider price ceiling): a session funded by relayer.sodi.network from an approved yield-pool note, a paid request to DeepSeek V4.1 Flash, and the real Claude Code CLI through rx402-proxy, each payment at a one-time stealth address the operator then found from the chain.",
+      "relayer": "https://relayer.sodi.network",
+      "asp": "https://sodi-asp.onrender.com",
+      "gateway": "https://inference.sodi.network",
+      "session": {
+        "address": "0x64A529202CfB0bA93275e05C183a1EC6B17eaf67",
+        "budget": "30000",
+        "fundingTx": "0xae529f5a55488fa3446d205b5bc7b19aa87aa331b2f511516ca25748b5f7b1b3"
+      },
+      "request": {
+        "model": "deepseek/deepseek-v4.1-flash",
+        "paid": "556",
+        "upstreamCostUsd": 5.9607e-05,
+        "stealthAddress": "0xc0442Fae95Ef39C1D207C7CAfD3B971B6b7069A6",
+        "tx": "0x92aba4d1408835081e869b4846f3ee288b50925a1570b3ac5e2cff012b63c1a1"
+      },
+      "claudeCode": {
+        "output": "Hello from Sodi \u2014 good to be here.",
+        "paid": "2599",
+        "stealthAddress": "0x414a2fAC7a20755cc6F794De3cAb42145eb071e3",
+        "tx": "0x17e1bf386ee94ca6db896d8db04578f90b57e280076a94e3cd1dbb376c5f36e1"
+      }
     }
   }
 }
