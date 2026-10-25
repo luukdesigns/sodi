@@ -6,10 +6,20 @@
  * content type.
  */
 
+export interface Pricing {
+  /** USD per token, as OpenRouter publishes them (decimal strings). */
+  prompt: string;
+  completion: string;
+  request?: string;
+}
+
 export interface ModelInfo {
   id: string;
-  /** USD per token, as OpenRouter publishes them (decimal strings). */
-  pricing: { prompt: string; completion: string; request?: string };
+  /**
+   * The price ceiling requests are quoted at and routed under (USD per token). The catalog sets it
+   * from the model's provider prices; until then it's the model's listed price.
+   */
+  pricing: Pricing;
   contextLength?: number;
   maxCompletionTokens?: number;
 }
@@ -78,6 +88,17 @@ export class Upstream {
       }));
   }
 
+  /** Each provider's price for a model, from /models/{id}/endpoints. */
+  async endpointPrices(id: string): Promise<Pricing[]> {
+    const res = await this.f(`${this.config.baseUrl}/models/${id}/endpoints`, { headers: { authorization: `Bearer ${this.config.apiKey}` } });
+    if (!res.ok) throw new UpstreamError(res.status, 'unavailable');
+    const { data } = (await res.json()) as { data: { endpoints?: { pricing?: Record<string, string> }[] } };
+    return (data.endpoints ?? [])
+      .map((e) => e.pricing)
+      .filter((p): p is Record<string, string> => p?.prompt !== undefined && p?.completion !== undefined && Number(p.prompt) >= 0 && Number(p.completion) >= 0)
+      .map((p) => ({ prompt: p.prompt!, completion: p.completion!, request: p.request }));
+  }
+
   /** Remaining credit in USD. Needs the management key. */
   async remainingCredits(): Promise<number> {
     if (!this.config.managementKey) throw new Error('no management key: credit balance unavailable');
@@ -92,12 +113,28 @@ export class Upstream {
    * once the upstream has accepted the request (status and headers received); the body is still
    * unread, so the caller can settle payment before streaming it on.
    */
-  async send(path: '/chat/completions' | '/messages', body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
+  async send(
+    path: '/chat/completions' | '/messages',
+    body: Record<string, unknown>,
+    opts: { signal?: AbortSignal; maxPrice?: Pricing } = {},
+  ): Promise<Response> {
+    // With a ceiling, never route to a provider priced above what the request was quoted at, and take
+    // the cheapest that qualifies. max_price is in USD per million tokens (per request for `request`).
+    const ceiling = opts.maxPrice
+      ? {
+          sort: 'price',
+          max_price: {
+            prompt: Number(opts.maxPrice.prompt) * 1e6,
+            completion: Number(opts.maxPrice.completion) * 1e6,
+            ...(opts.maxPrice.request !== undefined ? { request: Number(opts.maxPrice.request) } : {}),
+          },
+        }
+      : {};
     const res = await this.f(`${this.config.baseUrl}${path}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.config.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ ...body, provider: this.routing }),
-      signal,
+      body: JSON.stringify({ ...body, provider: { ...this.routing, ...ceiling } }),
+      signal: opts.signal,
     });
     if (res.ok) return res;
     const text = await res.text().catch(() => '');

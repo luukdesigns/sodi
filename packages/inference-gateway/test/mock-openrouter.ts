@@ -31,7 +31,18 @@ export const MODELS = [
   { id: 'openrouter/auto', pricing: { prompt: '-1', completion: '-1' }, context_length: 2_000_000, top_provider: {} },
   // Cheap with a long context: what Claude Code's large system prompt and tool list need.
   { id: 'test/long', pricing: { prompt: '0.0000001', completion: '0.000001' }, context_length: 1_000_000, top_provider: { max_completion_tokens: 8192 } },
+  { id: 'test/spread', pricing: { prompt: '0.00000002', completion: '0.0000001' }, context_length: 1_000_000, top_provider: { max_completion_tokens: 8192 } },
   { id: 'test/not-allowlisted', pricing: { prompt: '0', completion: '0' }, context_length: 8_000, top_provider: {} },
+];
+
+/** test/spread's providers, cheapest first by a 4:1 input/output mix. */
+export const SPREAD = [
+  { prompt: '0.00000002', completion: '0.0000001' },
+  { prompt: '0.00000003', completion: '0.00000012' },
+  { prompt: '0.00000005', completion: '0.0000002' },
+  { prompt: '0.0000001', completion: '0.0000004' },
+  { prompt: '0.00000015', completion: '0.0000005' },
+  { prompt: '0.0000006', completion: '0.0000024' },
 ];
 
 export const API_KEY = 'sk-or-test-inference';
@@ -62,6 +73,14 @@ export async function startMockOpenRouter(): Promise<MockOpenRouter> {
     const json = (status: number, v: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(v));
 
     if (req.method === 'GET' && path === '/models') return json(200, { data: MODELS });
+    const endpoints = path.match(/^\/models\/(.+)\/endpoints$/);
+    if (req.method === 'GET' && endpoints) {
+      const m = MODELS.find((x) => x.id === endpoints[1]);
+      if (!m) return json(404, { error: { message: 'no such model' } });
+      // One provider at the listed price, except test/spread, whose providers range 1x to 30x.
+      const prices = m.id === 'test/spread' ? SPREAD : [m.pricing];
+      return json(200, { data: { id: m.id, endpoints: prices.map((pricing, i) => ({ provider_name: `p${i}`, pricing, status: 0 })) } });
+    }
     if (req.method === 'GET' && path === '/credits') {
       if (auth !== `Bearer ${MANAGEMENT_KEY}`) return json(403, { error: { message: 'Only management keys can perform this operation' } });
       return json(200, { data: credits });

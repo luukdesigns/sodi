@@ -46,7 +46,7 @@ describe('gateway (mock upstream, stand-in payments)', () => {
     payments = new FakePayments();
     app = createGateway({
       upstream,
-      catalog: new ModelCatalog(upstream, ['test/small', 'test/retaining', 'openrouter/auto']),
+      catalog: new ModelCatalog(upstream, ['test/small', 'test/retaining', 'openrouter/auto', 'test/spread']),
       payments: payments as unknown as PaymentGate,
       limiter: new RateLimiter(3, 60_000),
       abuse: new GuardModelClassifier(upstream),
@@ -95,7 +95,8 @@ describe('gateway (mock upstream, stand-in payments)', () => {
       model: 'test/small',
       messages: [{ role: 'user', content: SECRET }],
       max_tokens: 64,
-      provider: { data_collection: 'deny', require_parameters: true },
+      // Routed no higher than the price it was quoted at, cheapest qualifying provider first.
+      provider: { data_collection: 'deny', require_parameters: true, sort: 'price', max_price: { prompt: 0.000001 * 1e6, completion: 0.000002 * 1e6 } },
     });
     const headerValues = JSON.stringify(sent.headers);
     for (const leaked of ['session=abc', '203.0.113.7', 'AliceAgent', 'org-alice', 'payment-signature', '0x1111']) expect(headerValues).not.toContain(leaked);
@@ -129,6 +130,23 @@ describe('gateway (mock upstream, stand-in payments)', () => {
     const text = await res.text();
     expect(text).toContain('event: message_stop');
     expect(checkDelivery(text).ok).toBe(true);
+  });
+
+  it('quotes at a ceiling over the cheapest providers, and routes no higher than it', async () => {
+    const body = { model: 'test/spread', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1000 };
+    const quoted = BigInt((await (await post('/v1/chat/completions', body)).json()).accepts[0].amount);
+    const res = await post('/v1/chat/completions', body, { 'payment-signature': `0x7777777777777777777777777777777777777777:${quoted}` });
+    expect(res.status).toBe(200);
+    // The fifth-cheapest provider sets the ceiling: 0.15 and 0.5 USD per million tokens.
+    expect(mock.received.at(-1)!.body!.provider).toMatchObject({ sort: 'price', max_price: { prompt: 0.00000015 * 1e6, completion: 0.0000005 * 1e6 } });
+    // 1000 output tokens at the ceiling alone is 0.0005 USD; the listed (cheapest) price would quote 0.0001.
+    expect(quoted).toBeGreaterThan(500n);
+  });
+
+  it('refuses Anthropic messages with a system role before quoting', async () => {
+    const res = await post('/v1/messages', { model: 'test/small', max_tokens: 50, messages: [{ role: 'system', content: 'x' }, { role: 'user', content: 'hi' }] });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('roles');
   });
 
   it('refuses models that are not allowlisted or have no fixed price', async () => {

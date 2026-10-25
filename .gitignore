@@ -50,3 +50,4 @@ memory/contracts/broadcast/**/dry-run/
 stealth/contracts/out/
 stealth/contracts/cache/
 stealth/contracts/broadcast/**/dry-run/
+.tmp/

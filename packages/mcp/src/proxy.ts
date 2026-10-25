@@ -101,7 +101,24 @@ export function createPaidProxy(client: Rx402Client, options: ProxyOptions): Pai
     const model = (await servedModels()).has(asked) ? asked : options.defaultModel;
     body.model = model;
     if (typeof body.max_tokens !== 'number' || body.max_tokens > options.maxTokens) body.max_tokens = options.maxTokens;
+    // Claude Code puts some context in messages with role "system", which only Claude's own API
+    // accepts: move that text into the system prompt.
+    if (Array.isArray(body.messages)) {
+      const moved: unknown[] = [];
+      body.messages = (body.messages as { role?: string; content?: unknown }[]).filter((m) => {
+        if (m?.role !== 'system') return true;
+        if (typeof m.content === 'string') moved.push({ type: 'text', text: m.content });
+        else if (Array.isArray(m.content)) moved.push(...m.content);
+        return false;
+      });
+      if (moved.length) {
+        const system = typeof body.system === 'string' ? [{ type: 'text', text: body.system }] : Array.isArray(body.system) ? body.system : [];
+        body.system = [...system, ...moved];
+      }
+    }
     const thinking = body.thinking as { type?: string; budget_tokens?: number } | undefined;
+    // Claude Code asks for Claude-only thinking modes ("adaptive"); other models use their own default.
+    if (thinking && thinking.type !== 'enabled') delete body.thinking;
     if (thinking?.type === 'enabled' && typeof thinking.budget_tokens === 'number' && thinking.budget_tokens >= (body.max_tokens as number)) {
       thinking.budget_tokens = Math.max(1024, Math.floor((body.max_tokens as number) / 2));
       if (thinking.budget_tokens >= (body.max_tokens as number)) delete body.thinking;

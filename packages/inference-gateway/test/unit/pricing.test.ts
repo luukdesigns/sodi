@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { priceCeiling } from '../../src/catalog.js';
 import { PricingError, estimateInputTokens, quote } from '../../src/pricing.js';
 import { RequestError, parseRequest, promptText } from '../../src/requests.js';
 import type { ModelInfo } from '../../src/upstream.js';
@@ -27,7 +28,8 @@ describe('requests', () => {
   it('accepts Anthropic thinking only inside max_tokens', () => {
     const ok = parseRequest('anthropic', { model: 'm', system: 'be brief', messages: [{ role: 'user', content: 'x' }], max_tokens: 2000, thinking: { type: 'enabled', budget_tokens: 1024 } }, limits);
     expect(ok.body.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
-    expect(() => parseRequest('anthropic', { model: 'm', messages: [{}], max_tokens: 1000, thinking: { type: 'enabled', budget_tokens: 1024 } }, limits)).toThrow(/budget_tokens/);
+    expect(() => parseRequest('anthropic', { model: 'm', messages: [{ role: 'user', content: 'x' }], max_tokens: 1000, thinking: { type: 'enabled', budget_tokens: 1024 } }, limits)).toThrow(/budget_tokens/);
+    expect(() => parseRequest('anthropic', { model: 'm', messages: [{ role: 'user', content: 'x' }], max_tokens: 1000, thinking: { type: 'adaptive' } }, limits)).toThrow(/thinking.type/);
   });
 
   it('collects the prompt text for the abuse hook', () => {
@@ -65,5 +67,16 @@ describe('pricing', () => {
     expect(() => quote(r, { ...small, pricing: { prompt: '-1', completion: '-1' } }, 0)).toThrow(PricingError);
     expect(() => quote(r, { ...small, contextLength: 4000 }, 0)).toThrow(/context/);
     expect(() => quote(r, { ...small, maxCompletionTokens: 2048 }, 0)).toThrow(/limit of 2048/);
+  });
+});
+
+describe('price ceiling', () => {
+  const p = (prompt: string, completion: string, request?: string) => ({ prompt, completion, ...(request ? { request } : {}) });
+  it('is the most expensive of the n cheapest providers, per component', () => {
+    const providers = [p('0.0000006', '0.0000024'), p('0.00000002', '0.0000001'), p('0.00000005', '0.0000003'), p('0.00000004', '0.0000002', '0.001')];
+    expect(priceCeiling(providers, 3)).toEqual(p('0.00000005', '0.0000003', '0.001'));
+    expect(priceCeiling(providers, 1)).toEqual(p('0.00000002', '0.0000001'));
+    expect(priceCeiling(providers, 10)).toEqual(p('0.0000006', '0.0000024', '0.001'));
+    expect(priceCeiling([], 5)).toBeUndefined();
   });
 });

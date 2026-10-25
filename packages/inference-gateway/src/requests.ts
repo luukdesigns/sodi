@@ -79,9 +79,15 @@ export function parseRequest(format: Format, raw: unknown, limits: Limits): Infe
   const stream = b.stream === true;
   if (stream) body.stream = true;
 
+  if (format === 'anthropic' && (b.messages as { role?: unknown }[]).some((m) => m?.role !== 'user' && m?.role !== 'assistant')) {
+    throw new RequestError('messages may only have the roles "user" and "assistant"; put system text in "system"');
+  }
   if (format === 'anthropic' && body.thinking !== undefined) {
     // Extended thinking is billed as output; Anthropic requires its budget to sit inside max_tokens.
     const t = body.thinking as { type?: string; budget_tokens?: unknown };
+    // Only the two portable forms: other modes (Claude's "adaptive", say) aren't understood by other
+    // models' providers, and the upstream would reject the request.
+    if (t?.type !== 'enabled' && t?.type !== 'disabled') throw new RequestError('thinking.type must be "enabled" (with budget_tokens) or "disabled"');
     if (t?.type === 'enabled' && !(typeof t.budget_tokens === 'number' && t.budget_tokens < maxTokens)) {
       throw new RequestError('thinking.budget_tokens must be below max_tokens');
     }

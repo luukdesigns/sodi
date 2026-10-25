@@ -190,7 +190,7 @@ describe('inference gateway on a testnet fork', () => {
 
     // What reached the upstream: the sanitized body with our routing policy, on our key, nothing else.
     const sent = mock.received.filter((r) => r.path === '/chat/completions').at(-1)!;
-    expect(sent.body).toEqual({ ...body, provider: { data_collection: 'deny', require_parameters: true } });
+    expect(sent.body).toMatchObject({ ...body, provider: { data_collection: 'deny', require_parameters: true, sort: 'price' } });
     expect(sent.headers.authorization).toBe(`Bearer ${API_KEY}`);
     expect(JSON.stringify(sent.headers)).not.toMatch(/payment|0x[0-9a-f]{40}/i);
   }, 600_000);
@@ -217,7 +217,7 @@ describe('inference gateway on a testnet fork', () => {
     expect(checkDelivery(a).ok).toBe(true);
     expect(checkDelivery(a.replace('mock', 'MOCK')).ok).toBe(false);
     expect(anthropic.payment?.amount).toBe(priceOf('anthropic', anthropicBody));
-    expect(mock.received.at(-1)).toMatchObject({ path: '/messages', body: { ...anthropicBody, provider: { data_collection: 'deny', require_parameters: true } } });
+    expect(mock.received.at(-1)).toMatchObject({ path: '/messages', body: { ...anthropicBody, provider: { data_collection: 'deny', require_parameters: true, sort: 'price' } } });
   }, 600_000);
 
   it('refuses, without charging, when no no-retention provider serves the model', async () => {

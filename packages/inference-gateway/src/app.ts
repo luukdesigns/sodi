@@ -90,9 +90,10 @@ export function createGateway(config: GatewayConfig): Hono {
 
     let req;
     let price;
+    let model;
     try {
       req = parseRequest(format, raw, config.limits);
-      const model = await config.catalog.get(req.model).catch(() => {
+      model = await config.catalog.get(req.model).catch(() => {
         throw new UpstreamError(503, 'unavailable');
       });
       if (!model) return error(format, 400, `model ${JSON.stringify(req.model).slice(0, 120)} is not offered here; see GET /v1/models`);
@@ -129,7 +130,7 @@ export function createGateway(config: GatewayConfig): Hono {
 
     let upstream: Response;
     try {
-      upstream = await config.upstream.send(PATHS[format], req.body, req.stream ? c.req.raw.signal : undefined);
+      upstream = await config.upstream.send(PATHS[format], req.body, { signal: req.stream ? c.req.raw.signal : undefined, maxPrice: model.pricing });
     } catch (err) {
       payment.release();
       if (err instanceof UpstreamError && err.kind === 'no-private-provider') {
