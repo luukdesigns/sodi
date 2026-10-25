@@ -33,6 +33,7 @@ import { RateLimiter } from '../../src/guards.js';
 import { CreditLedger } from '../../src/credits.js';
 import { CreditKeeper } from '../../src/keeper.js';
 import { PaymentGate } from '../../src/payments.js';
+import { sweepRevenue } from '../../src/sweep.js';
 import { quote } from '../../src/pricing.js';
 import { parseRequest } from '../../src/requests.js';
 import { Upstream } from '../../src/upstream.js';
@@ -415,6 +416,21 @@ describe('inference gateway on a testnet fork', () => {
       expect(proxy.spent()).toBeGreaterThan(before);
     }, 300_000);
   });
+
+  it('sweeps revenue with the margin share paid to the fee sink', async () => {
+    const sink = fresh().address;
+    const payments = await merchant.scan(publicClient, { fromBlock: startBlock, tokens: [USDG] });
+    expect(payments.length).toBeGreaterThan(3);
+    const balances = await Promise.all(payments.map((p) => balance(p.stealthAddress)));
+    const to = fresh().address;
+    const swept = await sweepRevenue({ merchant, publicClient, gasPayer: wallet(facilitatorAcct), payments, token: USDG, domain: { name: 'Global Dollar', version: '1' }, to, feeSink: sink, shareOfMarginBps: 5000, marginBps: 1000 });
+    const expectedSink = balances.reduce((sum, b) => sum + (b * 454n) / 10_000n, 0n);
+    expect(await balance(sink)).toBe(expectedSink);
+    expect(await balance(to)).toBe(balances.reduce((a, b) => a + b, 0n) - expectedSink);
+    for (const p of payments) expect(await balance(p.stealthAddress)).toBe(0n);
+    // A payment too small to split (share rounds to zero) goes whole to `to`.
+    for (const [i, b] of balances.entries()) expect(Boolean(swept[i]!.split)).toBe((b * 454n) / 10_000n > 0n);
+  }, 600_000);
 
   it('printed nothing that carries a prompt', () => {
     for (const line of printed) expect(line).not.toContain(SECRET);

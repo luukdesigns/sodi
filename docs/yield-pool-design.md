@@ -198,3 +198,12 @@ Run on 2026-10-24 against a fork of Robinhood Chain mainnet, with the real USDG 
 - **The public mainnet RPC keeps only recent state and rate-limits**, so fork tests start at the latest block and the anvil runner throttles itself.
 
 **Not yet shown:** a real ragequit proof (the pool and circuits are unchanged, so it should behave as today); sessions when the Morpho markets are fully borrowed; and the stack integration listed under [Testnet](#testnet). The contracts are a prototype and need a design review and an audit before holding anything real.
+
+## Session-open fee (added 2026-10-25)
+
+`SodiSessionFunder` can charge a session-open fee: a fixed share of each session, paid in USDG to a fee
+sink. It is separate from the depositors' protocol fee, which still goes to the vault. It is off
+until the deployer calls `setFeeSink(sink, bps)`, once; it can't be changed or turned off afterwards,
+and is capped at 1%. Clients size withdrawals with `needed()`, which includes it, so nothing changes on
+their side. A withdrawal proved before the fee is turned on and landing after it is refused as short
+(`NotEnough`) and has to be proved again.

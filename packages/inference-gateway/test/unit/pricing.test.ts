@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { priceCeiling } from '../../src/catalog.js';
+import { marginShareOfRevenueBps } from '../../src/sweep.js';
 import { PricingError, estimateInputTokens, quote } from '../../src/pricing.js';
 import { RequestError, parseRequest, promptText } from '../../src/requests.js';
 import type { ModelInfo } from '../../src/upstream.js';
@@ -78,5 +79,15 @@ describe('price ceiling', () => {
     expect(priceCeiling(providers, 1)).toEqual(p('0.00000002', '0.0000001'));
     expect(priceCeiling(providers, 10)).toEqual(p('0.0000006', '0.0000024', '0.001'));
     expect(priceCeiling([], 5)).toBeUndefined();
+  });
+});
+
+describe('margin share', () => {
+  it('is the share of the margin part of revenue', () => {
+    // 10% margin: revenue is 1.1x cost, so the margin is 1/11 of revenue; half of it is 454 bps.
+    expect(marginShareOfRevenueBps(5000, 1000)).toBe(454);
+    expect(marginShareOfRevenueBps(10_000, 1000)).toBe(909);
+    expect(marginShareOfRevenueBps(5000, 0)).toBe(0);
+    expect(() => marginShareOfRevenueBps(10_001, 1000)).toThrow();
   });
 });

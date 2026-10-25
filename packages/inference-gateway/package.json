@@ -16,7 +16,8 @@
     "start": "tsx src/main.ts",
     "test": "vitest run test/unit",
     "test:e2e": "vitest run test/e2e/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sweep": "tsx src/sweep-main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

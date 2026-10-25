@@ -8,3 +8,4 @@ export { PaymentError, PaymentGate, type PaymentConfig, type VerifiedPayment } f
 export { PricingError, type Quote, estimateInputTokens, quote } from './pricing.js';
 export { type Format, type InferenceRequest, type Limits, RequestError, parseRequest, promptText } from './requests.js';
 export { type ModelInfo, type RoutingPolicy, Upstream, type UpstreamConfig, UpstreamError } from './upstream.js';
+export { type SweepConfig, marginShareOfRevenueBps, sweepRevenue } from './sweep.js';

@@ -72,6 +72,14 @@ A refusal at any of steps 1 to 3 leaves the payment unsettled, so it costs the a
 - **Abuse hook:** `AbuseHook.check({ request, prompt })` runs before forwarding. The default lets everything through. `GuardModelClassifier` is an example that asks Llama Guard through the same no-retention routing; turn it on with `ABUSE_GUARD_MODEL`. It costs one small upstream call per request and fails closed.
 - **Credit keeper:** reads the balance (`GET /api/v1/credits`, management key), asks a `TopUp` for more below `CREDIT_THRESHOLD_USD`, and stops quoting below `CREDIT_FLOOR_USD`, so no agent pays for a request we can't serve. OpenRouter removed its programmatic crypto top-up (`POST /api/v1/credits/coinbase` now returns `410 Gone`), so the shipped `TopUp` posts `{ event, remainingUsd, requestedUsd }` to `TOPUP_WEBHOOK_URL` for the operator to act on. Anything that can buy credits plugs into the same interface.
 
+## Sweeping revenue
+
+Payments land at stealth addresses that only the operator's spending key can move. `npm run sweep` (run where the operator's wallet is, not on the gateway) finds them from the chain and moves each balance with a gasless EIP-3009 transfer.
+
+With `FEE_SINK` set, a share of the margin goes there first. A request is charged its upstream cost plus `MARGIN_BPS`, so the margin is `MARGIN_BPS / (10,000 + MARGIN_BPS)` of revenue. `MARGIN_SHARE_BPS` of that goes to the sink: half of a 10% margin is 454 bps of each payment. Without `FEE_SINK`, nothing is split off.
+
+Sweeping many addresses to one destination at once links them back together, so sweep into a privacy pool deposit, or at different times.
+
 ## Running it
 
 ```sh

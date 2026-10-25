@@ -271,7 +271,8 @@ export class StealthMerchant extends StealthReceiver {
 
   /**
    * Moves each payment's full balance to `to` with an EIP-3009 authorization signed by its stealth key,
-   * so stealth addresses never need gas. `gasPayer` submits them.
+   * so stealth addresses never need gas. `gasPayer` submits them. With `split`, `split.bps` of each
+   * balance goes to `split.to` first (a fee sink, say) and the rest to `to`.
    *
    * Privacy: sweeping many stealth addresses to one destination, or in one burst, links them back
    * together. Sweep to different destinations, at different times, or into a privacy pool.
@@ -283,21 +284,19 @@ export class StealthMerchant extends StealthReceiver {
     token: Address;
     domain: TokenDomain;
     to: Address;
+    split?: { to: Address; bps: number };
     nowSeconds?: number;
-  }): Promise<{ stealthAddress: Address; amount: bigint; txHash: Hex }[]> {
-    const { publicClient, gasPayer, token, domain, to } = opts;
+  }): Promise<{ stealthAddress: Address; amount: bigint; txHash: Hex; split?: { amount: bigint; txHash: Hex } }[]> {
+    const { publicClient, gasPayer, token, domain, to, split } = opts;
+    if (split && (!Number.isInteger(split.bps) || split.bps < 0 || split.bps > 10_000)) throw new Error('split.bps must be 0..10000');
     const chainId = await publicClient.getChainId();
     const now = opts.nowSeconds ?? Math.floor(Date.now() / 1000);
-    const swept = [];
-    for (const p of opts.payments) {
-      const account = privateKeyToAccount(this.keyFor(p.ephemeralPublicKey));
-      if (account.address.toLowerCase() !== p.stealthAddress.toLowerCase()) throw new Error('stealth key mismatch');
-      const balance = await publicClient.readContract({ address: token, abi: eip3009Abi, functionName: 'balanceOf', args: [account.address] });
-      if (balance === 0n) continue;
+
+    const send = async (account: ReturnType<typeof privateKeyToAccount>, dest: Address, value: bigint): Promise<Hex> => {
       const message = {
         from: account.address,
-        to,
-        value: balance,
+        to: dest,
+        value,
         validAfter: 0n,
         validBefore: BigInt(now + 600),
         nonce: `0x${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}` as Hex,
@@ -319,7 +318,20 @@ export class StealthMerchant extends StealthReceiver {
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== 'success') throw new Error(`sweep reverted: ${hash}`);
-      swept.push({ stealthAddress: account.address, amount: balance, txHash: hash });
+      return hash;
+    };
+
+    const swept: { stealthAddress: Address; amount: bigint; txHash: Hex; split?: { amount: bigint; txHash: Hex } }[] = [];
+    for (const p of opts.payments) {
+      const account = privateKeyToAccount(this.keyFor(p.ephemeralPublicKey));
+      if (account.address.toLowerCase() !== p.stealthAddress.toLowerCase()) throw new Error('stealth key mismatch');
+      const balance = await publicClient.readContract({ address: token, abi: eip3009Abi, functionName: 'balanceOf', args: [account.address] });
+      if (balance === 0n) continue;
+      const share = split ? (balance * BigInt(split.bps)) / 10_000n : 0n;
+      const splitTx = share > 0n ? await send(account, split!.to, share) : undefined;
+      const rest = balance - share;
+      const txHash = rest > 0n ? await send(account, to, rest) : splitTx!;
+      swept.push({ stealthAddress: account.address, amount: rest, txHash, ...(splitTx ? { split: { amount: share, txHash: splitTx } } : {}) });
     }
     return swept;
   }

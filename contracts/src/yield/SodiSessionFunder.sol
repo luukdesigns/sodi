@@ -26,6 +26,9 @@ import {SodiYieldVault} from './SodiYieldVault.sol';
 ///         shares are worth less than the session plus fees (a loss in the underlying vault, say), it
 ///         reverts rather than pay short.
 ///
+///         A session-open fee can be turned on once, by the deployer (`setFeeSink`): a fixed share of
+///         each session, paid in USDG to a fee sink. Until then there is none.
+///
 ///         PROTOTYPE: not audited, not deployed. See docs/yield-pool-design.md.
 contract SodiSessionFunder is ReentrancyGuard {
   using SafeERC20 for IERC20;
@@ -44,24 +47,49 @@ contract SodiSessionFunder is ReentrancyGuard {
   /// @notice Charged on each session's amount and donated to the yield vault, in basis points.
   uint256 public immutable protocolFeeBPS;
   uint256 public constant MAX_RELAY_FEE_BPS = 100;
+  uint256 public constant MAX_SESSION_FEE_BPS = 100;
+
+  /// @notice Can set the fee sink, once.
+  address public immutable deployer;
+  /// @notice Where the session-open fee goes. Zero (the default) charges no session fee.
+  address public feeSink;
+  /// @notice The session-open fee, in basis points of the session, paid to `feeSink`.
+  uint256 public sessionFeeBPS;
 
   event SessionFunded(address indexed session, uint256 shares, uint256 amount, uint256 relayFee, uint256 toDepositors);
+  event SessionFee(uint256 fee);
+  event FeeSinkSet(address sink, uint256 sessionFeeBPS);
 
   error WrongProcessooor();
   error RelayFeeTooHigh();
   error NotEnough(uint256 assets, uint256 needed);
+  error NotDeployer();
+  error FeeSinkAlreadySet();
+  error BadFeeSink();
 
   constructor(IPrivacyPool pool_, SodiYieldVault vault_, uint256 protocolFeeBPS_) {
     pool = pool_;
     vault = vault_;
     usdg = IERC20(vault_.asset());
     protocolFeeBPS = protocolFeeBPS_;
+    deployer = msg.sender;
     require(pool_.ASSET() == address(vault_) && protocolFeeBPS_ <= 1_000, 'bad config');
+  }
+
+  /// @notice Turns on the session-open fee: `bps` of every session from now on, paid to `sink`.
+  ///         Once only, by the deployer; it can't be changed or turned off afterwards.
+  function setFeeSink(address sink, uint256 bps) external {
+    if (msg.sender != deployer) revert NotDeployer();
+    if (feeSink != address(0)) revert FeeSinkAlreadySet();
+    if (sink == address(0) || bps == 0 || bps > MAX_SESSION_FEE_BPS) revert BadFeeSink();
+    feeSink = sink;
+    sessionFeeBPS = bps;
+    emit FeeSinkSet(sink, bps);
   }
 
   /// @notice USDG the shares of a withdrawal must be worth to fund a session of `amount`.
   function needed(uint256 amount, uint256 relayFeeBPS) public view returns (uint256) {
-    return amount + _fee(amount, protocolFeeBPS) + _fee(amount, relayFeeBPS);
+    return amount + _fee(amount, protocolFeeBPS) + _fee(amount, relayFeeBPS) + _fee(amount, sessionFeeBPS);
   }
 
   function fund(IPrivacyPool.Withdrawal calldata w, ProofLib.WithdrawProof calldata proof) external nonReentrant {
@@ -76,11 +104,16 @@ contract SodiSessionFunder is ReentrancyGuard {
     uint256 relayFee = _fee(d.amount, d.relayFeeBPS);
     uint256 need = needed(d.amount, d.relayFeeBPS);
     if (assets < need) revert NotEnough(assets, need);
-    // The protocol fee plus whatever the margin left over.
-    uint256 toDepositors = assets - d.amount - relayFee;
+    uint256 sessionFee = _fee(d.amount, sessionFeeBPS); // zero until a fee sink is set
+    // The depositors' protocol fee plus whatever the margin left over.
+    uint256 toDepositors = assets - d.amount - relayFee - sessionFee;
 
     usdg.safeTransfer(d.session, d.amount);
     if (relayFee > 0) usdg.safeTransfer(d.feeRecipient, relayFee);
+    if (sessionFee > 0) {
+      usdg.safeTransfer(feeSink, sessionFee);
+      emit SessionFee(sessionFee);
+    }
     if (toDepositors > 0) {
       usdg.forceApprove(address(vault), toDepositors);
       vault.donate(toDepositors);

@@ -365,6 +365,40 @@ contract YieldPoolForkTest is Test {
     assertGt(vault.convertToAssets(left), leftValue + 0.04e6, 'the fee reached the depositors');
   }
 
+  function test_SessionFeeGoesToTheSinkOnceSet() public {
+    address sink = makeAddr('fee sink');
+    _deposit(saver, 1_000e6, 1);
+    _approveRoot('root');
+
+    // Off by default: nothing reaches the sink.
+    _fundSession(10e6);
+    assertEq(USDG.balanceOf(sink), 0);
+
+    // Only the deployer, only once.
+    vm.prank(saver);
+    vm.expectRevert(SodiSessionFunder.NotDeployer.selector);
+    funder.setFeeSink(sink, 10);
+    vm.expectRevert(SodiSessionFunder.BadFeeSink.selector);
+    funder.setFeeSink(sink, 101);
+    funder.setFeeSink(sink, 10); // 0.1%
+    vm.expectRevert(SodiSessionFunder.FeeSinkAlreadySet.selector);
+    funder.setFeeSink(makeAddr('other'), 10);
+
+    // A second session (its own nullifier), sized with the fee included by `needed`.
+    address next = makeAddr('next session');
+    uint256 shares = _sharesFor(10e6);
+    IPrivacyPool.Withdrawal memory w = _withdrawal(SodiSessionFunder.FundingData(next, relayer, RELAY_FEE_BPS, 10e6));
+    ProofLib.WithdrawProof memory p = _proof(w, shares);
+    p.pubSignals[0] = uint256(keccak256('second commitment')) % Constants.SNARK_SCALAR_FIELD;
+    p.pubSignals[1] = uint256(keccak256('second nullifier')) % Constants.SNARK_SCALAR_FIELD;
+    _mockVerifiers();
+    vm.prank(relayer);
+    funder.fund(w, p);
+    assertEq(USDG.balanceOf(next), 10e6, 'the session still gets exactly its amount');
+    assertEq(USDG.balanceOf(sink), (10e6 * 10) / 10_000, 'the session fee, in USDG, to the sink');
+    assertEq(USDG.balanceOf(address(funder)), 0);
+  }
+
   function test_RefusesToPayShortWithoutAMargin() public {
     _deposit(saver, 100e6, 1);
     _approveRoot('root');
