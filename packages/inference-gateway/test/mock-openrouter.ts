@@ -29,6 +29,8 @@ export const MODELS = [
   { id: 'test/retaining', pricing: { prompt: '0.000001', completion: '0.000001' }, context_length: 8_000, top_provider: { max_completion_tokens: 2048 } },
   { id: 'meta-llama/llama-guard-4-12b', pricing: { prompt: '0.0000002', completion: '0.0000002' }, context_length: 16_000, top_provider: {} },
   { id: 'openrouter/auto', pricing: { prompt: '-1', completion: '-1' }, context_length: 2_000_000, top_provider: {} },
+  // Cheap with a long context: what Claude Code's large system prompt and tool list need.
+  { id: 'test/long', pricing: { prompt: '0.0000001', completion: '0.000001' }, context_length: 1_000_000, top_provider: { max_completion_tokens: 8192 } },
   { id: 'test/not-allowlisted', pricing: { prompt: '0', completion: '0' }, context_length: 8_000, top_provider: {} },
 ];
 

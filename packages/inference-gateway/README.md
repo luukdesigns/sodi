@@ -29,7 +29,7 @@ const { response } = await rx402.fetch('https://inference.sodi.network/v1/chat/c
 });
 ```
 
-The OpenAI and Anthropic SDKs take a custom `fetch`, so either can point at the gateway with `fetch: (url, init) => rx402.fetch(url, init).then((r) => r.response)`. Agents on the [Sodi MCP server](../mcp) get the `ask_model` tool, which does all of this and scans the quote first.
+The OpenAI and Anthropic SDKs take a custom `fetch`, so either can point at the gateway with `fetch: (url, init) => rx402.fetch(url, init).then((r) => r.response)`. Claude Code works through [`rx402-proxy`](../mcp#claude-code-with-no-api-key), a local proxy that pays each request. Agents on the [Sodi MCP server](../mcp) get the `ask_model` tool, which does all of this and scans the quote first.
 
 ## Pricing
 
@@ -121,4 +121,5 @@ Put it behind a reverse proxy with access logging off for these paths; the gatew
   - refusal without charge when no no-retention provider is available;
   - the rate limit;
   - the keeper's top-up (mocked) and floor;
-  - `ask_model` through the MCP server, including a hostile quote refused before anything is signed.
+  - `ask_model` through the MCP server, including a hostile quote refused before anything is signed;
+  - `rx402-proxy`, including the real Claude Code CLI run with no Anthropic credentials.

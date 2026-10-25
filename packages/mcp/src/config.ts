@@ -28,7 +28,8 @@ const usdg = (s: string) => parseUnits(s, 6);
 export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOptions }> {
   const rpcUrl = env('RPC_URL', 'https://rpc.testnet.chain.robinhood.com');
   // The npm package ships the deployment and the circuits next to its bundle; a checkout uses the repo's.
-  const packaged = (p: string) => (existsSync(resolve(import.meta.dirname, p)) ? resolve(import.meta.dirname, p) : undefined);
+  // (In the bundle this code sits in dist/chunks/, so look one level up too.)
+  const packaged = (p: string) => [resolve(import.meta.dirname, p), resolve(import.meta.dirname, '..', p)].find((f) => existsSync(f));
   const deploymentFile = env(
     'DEPLOYMENT_FILE',
     packaged('deployments/46630.json') ?? resolve(import.meta.dirname, '../../../contracts/deployments/46630.json'),

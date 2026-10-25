@@ -4,7 +4,10 @@
  * deployed stealth settler), and the gateway forwards it upstream and delivers with a digest.
  * Run with test/e2e/run-fork.sh (needs POSTMAN_PRIVATE_KEY).
  */
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
 import { type Server, createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +24,7 @@ import { startServer as startAsp } from '../../../../asp/src/server.js';
 import { runCycle } from '../../../../asp/src/service.js';
 import type { ServiceState } from '../../../../asp/src/state.js';
 import { MemoryStore, Rx402Client, WalletRelayer, WithdrawalProver, aspAssociationSet } from '../../../rx402/src/index.js';
+import { createPaidProxy } from '../../../mcp/src/proxy.js';
 import { createSodiMcpServer } from '../../../mcp/src/tools.js';
 import { createGateway } from '../../src/app.js';
 import { ModelCatalog } from '../../src/catalog.js';
@@ -101,7 +105,7 @@ describe('inference gateway on a testnet fork', () => {
       floorUsd: 2,
       cooldownMs: 0,
     });
-    const common = { upstream, catalog: new ModelCatalog(upstream, ['test/small', 'test/large', 'test/retaining']), payments, marginBps: MARGIN_BPS, limits: LIMITS, network: 'eip155:46630', keeper };
+    const common = { upstream, catalog: new ModelCatalog(upstream, ['test/small', 'test/large', 'test/retaining', 'test/long']), payments, marginBps: MARGIN_BPS, limits: LIMITS, network: 'eip155:46630', keeper };
     servers.push(await listen(createGateway({ ...common, limiter: new RateLimiter(100, 60_000) }), 28510));
     // A second instance with a tight limit, for the rate-limit test.
     servers.push(await listen(createGateway({ ...common, limiter: new RateLimiter(2, 60_000) }), 28511));
@@ -306,6 +310,92 @@ describe('inference gateway on a testnet fork', () => {
       expect(store.load().payments?.length).toBe(before.payments); // nothing was signed
       expect(await balance(session.address)).toBe(before.balance);
     }, 120_000);
+  });
+
+  describe('rx402-proxy: Claude Code with no API key, paid per request', () => {
+    const proxyLog: string[] = [];
+    const startProxy = async (maxTotalSpend: bigint) => {
+      const p = createPaidProxy(client, { gatewayUrl: 'http://127.0.0.1:28510', defaultModel: 'test/long', maxTokens: 4000, maxTotalSpend, log: (l) => proxyLog.push(l) });
+      await new Promise<void>((r) => p.server.listen(0, '127.0.0.1', r));
+      servers.push(p.server);
+      return { ...p, url: `http://127.0.0.1:${(p.server.address() as AddressInfo).port}` };
+    };
+
+    it('takes a Claude Code request, pays the gateway from a session, and streams the answer back', async () => {
+      const proxy = await startProxy(1_000_000n);
+      const res = await fetch(`${proxy.url}/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': 'sk-ant-must-not-leave', 'anthropic-version': '2023-06-01', 'anthropic-beta': 'claude-code-20250219' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5', // not served by the gateway: mapped to the default
+          max_tokens: 32_000, // more than the gateway allows: lowered
+          stream: true,
+          thinking: { type: 'enabled', budget_tokens: 31_999 },
+          system: [{ type: 'text', text: 'You are Claude Code.', cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: SECRET }] }],
+          metadata: { user_id: 'user_abc_account_123' },
+        }),
+      });
+      const text = await res.text();
+      expect(res.status, text).toBe(200);
+      expect(text).toContain('event: message_stop');
+      expect(text).toContain(answerFor({ model: 'test/long', max_tokens: 4000 }).split(' ')[0]);
+      const sent = mock.received.at(-1)!;
+      expect(sent.body).toMatchObject({ model: 'test/long', max_tokens: 4000, thinking: { type: 'enabled', budget_tokens: 2000 }, stream: true });
+      expect(sent.body).not.toHaveProperty('metadata');
+      expect(JSON.stringify(sent)).not.toContain('sk-ant-must-not-leave');
+      expect(proxy.spent()).toBeGreaterThan(0n);
+      expect(proxyLog.at(-1)).toMatch(/test\/long: 200, paid .* USDG from 0x[0-9a-fA-F]{40}, delivery verified/);
+      expect(proxyLog.join('\n')).not.toContain(SECRET);
+    }, 600_000);
+
+    it('answers count_tokens locally, without paying', async () => {
+      const proxy = await startProxy(1_000_000n);
+      const payments = store.load().payments?.length;
+      const res = await fetch(`${proxy.url}/v1/messages/count_tokens`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hello' }] }) });
+      expect((await res.json()).input_tokens).toBeGreaterThan(0);
+      expect(store.load().payments?.length).toBe(payments);
+      expect(proxy.spent()).toBe(0n);
+    });
+
+    it('stops at its spending limit, in Anthropic error format, without signing', async () => {
+      const proxy = await startProxy(1n);
+      const payments = store.load().payments?.length;
+      const res = await fetch(`${proxy.url}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'x', max_tokens: 100, messages: [{ role: 'user', content: 'hi' }] }) });
+      expect(res.status).toBe(402);
+      expect((await res.json()).error.type).toBe('payment_required');
+      expect(store.load().payments?.length).toBe(payments);
+    }, 120_000);
+
+    const haveClaude = spawnSync('claude', ['--version']).status === 0;
+    it.runIf(haveClaude)('runs the real Claude Code CLI through it, with no Anthropic key or account', async () => {
+      const proxy = await startProxy(1_000_000n);
+      const before = proxy.spent();
+      // A clean environment: no Anthropic credentials of any kind, a fresh home, no telemetry.
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(ANTHROPIC|CLAUDE)/.test(k)) env[k] = v;
+      Object.assign(env, {
+        HOME: mkdtempSync(join(tmpdir(), 'claude-home-')),
+        ANTHROPIC_BASE_URL: proxy.url,
+        ANTHROPIC_API_KEY: 'unused',
+        DISABLE_TELEMETRY: '1',
+        DISABLE_AUTOUPDATER: '1',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      });
+      const out = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+        const p = spawn('claude', ['-p', 'Say hello.', '--max-turns', '1'], { env, cwd: env.HOME });
+        let stdout = '';
+        let stderr = '';
+        p.stdout.on('data', (d) => (stdout += d));
+        p.stderr.on('data', (d) => (stderr += d));
+        const t = setTimeout(() => p.kill(), 240_000);
+        p.on('close', (code) => (clearTimeout(t), resolve({ code, stdout, stderr })));
+        p.stdin.end();
+      });
+      expect(out.code, `${out.stdout}\n${out.stderr}\n${proxyLog.slice(-5).join('\n')}`).toBe(0);
+      expect(out.stdout).toContain('mock answer from test/long');
+      expect(proxy.spent()).toBeGreaterThan(before);
+    }, 300_000);
   });
 
   it('printed nothing that carries a prompt', () => {

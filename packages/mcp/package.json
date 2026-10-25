@@ -25,7 +25,8 @@
   ],
   "type": "module",
   "bin": {
-    "rx402-mcp": "dist/index.js"
+    "rx402-mcp": "dist/index.js",
+    "rx402-proxy": "dist/proxy.js"
   },
   "files": [
     "dist",
@@ -41,7 +42,8 @@
     "prepack": "node scripts/build.mjs",
     "test": "tsc --noEmit",
     "test:e2e": "vitest run test/e2e",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "proxy": "tsx src/proxy-main.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

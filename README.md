@@ -89,6 +89,7 @@ sodi/
 - [x] Session issuer: the agent holds only its own key; the pool secret and the hard limits live elsewhere ([issuer](./issuer))
 - [x] Public demo agent: buys data privately on a loop, with a live public page ([demo-agent](./demo-agent)); needs a server to stay up
 - [x] Inference gateway: any OpenRouter model, paid per request from a private session, with no account and no logs ([inference-gateway](./packages/inference-gateway)); tested end to end on a testnet fork, needs a server to go live
+- [x] Claude Code with no API key: a local proxy pays the inference gateway per request from a private session ([rx402-proxy](./packages/mcp#claude-code-with-no-api-key))
 - [ ] Capped mainnet beta with partner merchants
 - [ ] Yield pool: the pool earns Morpho interest, so savers deepen the anonymity set ([design and prototype](./docs/yield-pool-design.md))
 - [ ] Sodi L3 for per-payment privacy and near-zero fees ([draft](./chain))

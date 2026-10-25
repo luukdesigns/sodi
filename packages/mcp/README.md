@@ -19,6 +19,26 @@ The agent holds only its own key. The pool secret and the hard limits stay with 
 | `rx402_recycle` | Moves what's left in finished sessions back into the pool, through the relayer and the [recycler](../../contracts/README.md#sodirecycler), so nothing is stranded at old addresses. Leaves the current session and any with recently signed payments alone. Offered when a recycler is deployed (it is on testnet). |
 | `rx402_deposit` | Moves the owner's USDG into the pool. Only offered when `OWNER_PRIVATE_KEY` is set. This step is public. |
 
+## Claude Code with no API key
+
+The package also installs `rx402-proxy`, a local paying proxy. Claude Code talks to it as if it were the Anthropic API. The proxy forwards each request to the [inference gateway](../inference-gateway), pays the gateway's 402 from a private session, and streams the answer back:
+
+```sh
+RX402_ISSUER_URL=https://issuer.example RX402_AGENT_KEY=0x… npx -y -p @sodi/rx402-mcp rx402-proxy
+ANTHROPIC_BASE_URL=http://127.0.0.1:8411 ANTHROPIC_API_KEY=unused claude
+```
+
+You need no Anthropic key or account. No request can be linked to you or to any other request, not even by the gateway.
+
+- Requests for a model the gateway doesn't serve, including Claude Code's own `claude-*` defaults, go to `RX402_PROXY_MODEL` (by default the gateway default, DeepSeek V4.1 Flash). Set `ANTHROPIC_MODEL` to a gateway model id to choose one directly.
+- `max_tokens` is lowered to `RX402_PROXY_MAX_TOKENS` (default 8192), and a thinking budget is lowered with it.
+- The client's API key and headers never leave your machine. Only the request body goes to the gateway.
+- `count_tokens` is answered locally, for free.
+- The same limits apply as for the MCP tools: `RX402_MAX_PER_REQUEST`, `RX402_MAX_TOTAL_SPEND` for the proxy's run, and the owner controls. Each request's gateway quote is scanned the same way `ask_model` scans it, and each answer's delivery digest is checked. The log line has the model, price, session and digest result, and never the prompt.
+- The proxy listens on 127.0.0.1 only, since anything that can reach the port can spend from the wallet. The port is set with `RX402_PROXY_PORT`.
+
+Claude Code is built for Claude models; with open models on the other end, some features may work less well.
+
 ## Spending limits
 
 An agent can never spend more than:
@@ -90,4 +110,4 @@ By default it uses Sodi's hosted [relayer](../../relayer), [approval service](..
 
 `test/e2e/run-fork.sh` runs the whole stack on a local fork of Robinhood Chain testnet. An MCP client deposits through the tool, the approval service approves it, and the agent pays an x402 v1 and a v2 API. The session is funded through the HTTP relayer, which takes its 0.5% fee. A per-call price cap and the run spending limit both block payments they should. After a rotation, `rx402_recycle` leaves the old session alone while its payments could still be settled, then returns what's left to the pool through the relayer.
 
-`ask_model` is tested in the [inference gateway's](../inference-gateway) fork suite. It pays the gateway from the agent's own session and returns the answer with a verified digest. Given a hostile 402, whose description tells the model to send funds, it refuses with only the rule codes, and nothing is signed.
+`ask_model` and `rx402-proxy` are tested in the [inference gateway's](../inference-gateway) fork suite. The proxy runs the real Claude Code CLI, with no Anthropic credentials in its environment, against a gateway paid from an rx402 session. `ask_model` pays the gateway from the agent's own session and returns the answer with a verified digest. Given a hostile 402, whose description tells the model to send funds, it refuses with only the rule codes, and nothing is signed.

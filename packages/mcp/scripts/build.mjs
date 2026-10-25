@@ -17,8 +17,11 @@ const manifest = JSON.parse(readFileSync(resolve(pkg, 'package.json'), 'utf8'));
 
 rmSync(dist, { recursive: true, force: true });
 await build({
-  entryPoints: [resolve(pkg, 'src/index.ts')],
-  outfile: resolve(dist, 'index.js'),
+  // The MCP server and the local paying proxy, sharing one chunk of bundled code.
+  entryPoints: { index: resolve(pkg, 'src/index.ts'), proxy: resolve(pkg, 'src/proxy-main.ts') },
+  outdir: dist,
+  splitting: true,
+  chunkNames: 'chunks/[name]-[hash]',
   bundle: true,
   platform: 'node',
   format: 'esm',
