@@ -179,5 +179,46 @@
         "payment": "0x535b1ca069414cd8855f8f33a5a48ee06835fce23104d8f769a1159c155edd70"
       }
     }
+  },
+  "inferenceGateway": {
+    "liveRun": {
+      "description": "packages/inference-gateway/demo/live-testnet.ts, run 2026-10-25: a deposit into the yield pool, an rx402 session funded through /fund, a paid gateway request, and the real Claude Code CLI through rx402-proxy, each payment settled at a one-time stealth address. On-chain steps are real; the upstream was the mock OpenRouter, so no model was called and the answers are canned.",
+      "upstream": "mock OpenRouter (canned answers; no model called, no credit spent)",
+      "gatewayOperator": "0x12aEbdbBAD793197Fdd6C09a6d49a8b7B47f4712",
+      "deposit": "0x7727627a40bb6e10b101024a32388130a7ec0e82b9aa684368a3d144724662be",
+      "aspRoot": "0x33f4b3aa4e6c8f1db3bb9e19560ec9f5665808ec97a464cdc6d2935be5665db7",
+      "session": {
+        "address": "0xCf34babB7B43e3ff428BF91ee1d4763006bD55cD",
+        "budget": "50000",
+        "fundingTx": "0x73d78151106ba12c6c0302bac6fdec2e1e5b898c615d774de6230cf45b278864"
+      },
+      "payments": [
+        {
+          "via": "rx402 agent",
+          "amount": "709",
+          "stealthAddress": "0xC33F6512BbB3E3557C4A45c8c1B7fb7d3FBb48ea",
+          "tx": "0x76bbf2960e4f8e344dbe8b9194f627f807fe2e4f28450fd9ca75b2c684714364"
+        }
+      ],
+      "claudeCode": {
+        "output": "mock answer from test/long (4000 max)",
+        "proxyLog": [
+          "test/long: 200, paid 0.006068 USDG from 0xCf34babB7B43e3ff428BF91ee1d4763006bD55cD, delivery verified, 0.006068 of 0.1 USDG spent"
+        ],
+        "spent": "6068"
+      },
+      "found": [
+        {
+          "stealthAddress": "0xC33F6512BbB3E3557C4A45c8c1B7fb7d3FBb48ea",
+          "amount": "709",
+          "tx": "0x76bbf2960e4f8e344dbe8b9194f627f807fe2e4f28450fd9ca75b2c684714364"
+        },
+        {
+          "stealthAddress": "0x41142d23b844BA9C57B71a92AD52216d2c886E87",
+          "amount": "6068",
+          "tx": "0x2e50b7f34a227aae0c0148ee3cbf8cdf13a5d0807cf8b674e03b26142d7e7e48"
+        }
+      ]
+    }
   }
 }

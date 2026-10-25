@@ -123,3 +123,4 @@ Put it behind a reverse proxy with access logging off for these paths; the gatew
   - the keeper's top-up (mocked) and floor;
   - `ask_model` through the MCP server, including a hostile quote refused before anything is signed;
   - `rx402-proxy`, including the real Claude Code CLI run with no Anthropic credentials.
+- `demo/live-testnet.ts` ran the payment path live on Robinhood Chain testnet ([transactions](../../contracts/deployments/46630.json), under `inferenceGateway`). The owner deposited into the yield pool, and the approval service approved the deposit against its real depositor. An agent session was funded through the relayer and paid the gateway, and so did the real Claude Code CLI through `rx402-proxy`. Both payments landed at one-time addresses, which the operator then found from the chain. The upstream was the mock, so no model was called.
