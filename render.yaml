@@ -4,8 +4,15 @@
 #   sodi-asp.onrender.com   approval service: screens deposits, publishes the approved set
 #   inference.sodi.network  inference gateway: OpenRouter models paid per request over x402
 #
-# In Render: New -> Blueprint -> this repo. Values marked `sync: false` are secrets: Render asks for
-# them when the Blueprint is created, and they are never stored in the repo.
+# In Render: New -> Blueprint -> this repo. Secrets are not in the repo: upload each service's
+# secrets as a Secret File named `.env` (Environment -> Secret Files). scripts/render-start.sh loads
+# /etc/secrets/.env before starting the service.
+#
+#   sodi-relayer            RELAYER_PRIVATE_KEY
+#   sodi-asp                POSTMAN_PRIVATE_KEY
+#   sodi-inference-gateway  FACILITATOR_PRIVATE_KEY, STEALTH_META_ADDRESS, STEALTH_VIEWING_KEY,
+#                           OPENROUTER_API_KEY, and optionally OPENROUTER_MANAGEMENT_KEY and
+#                           TOPUP_WEBHOOK_URL (both set: the credit keeper runs)
 #
 # Paid instance types: free services sleep when idle (a sleeping relayer or gateway is a broken one),
 # and disks need a paid plan.
@@ -17,14 +24,12 @@ services:
     plan: starter
     region: virginia
     buildCommand: npm ci
-    startCommand: npm start -w @sodi/relayer
+    startCommand: sh scripts/render-start.sh @sodi/relayer
     healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: RELAYER_PRIVATE_KEY
-        sync: false
       - key: RELAY_FEE_BPS
         value: "50"
       # 0.01 USDG: sessions are small on testnet
@@ -39,7 +44,7 @@ services:
     plan: starter
     region: virginia
     buildCommand: npm ci
-    startCommand: npm start -w @sodi/asp
+    startCommand: sh scripts/render-start.sh @sodi/asp
     healthCheckPath: /health
     autoDeploy: true
     # State and published sets survive restarts and deploys.
@@ -50,9 +55,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # Holds ASP_POSTMAN on the testnet Entrypoint: publishes the approved set's root.
-      - key: POSTMAN_PRIVATE_KEY
-        sync: false
       - key: STATE_FILE
         value: /var/data/state.json
       - key: SETS_DIR
@@ -67,7 +69,7 @@ services:
     plan: starter
     region: virginia
     buildCommand: npm ci
-    startCommand: npm start -w @sodi/inference-gateway
+    startCommand: sh scripts/render-start.sh @sodi/inference-gateway
     healthCheckPath: /health
     autoDeploy: true
     # Exactly one instance: used payments and rate limits are tracked in memory.
@@ -86,19 +88,3 @@ services:
       # The gateway operator: receives payments that don't take the stealth offer.
       - key: PAY_TO
         value: "0x12aEbdbBAD793197Fdd6C09a6d49a8b7B47f4712"
-      # Pays settlement gas: the dedicated testnet facilitator 0xd34385efADad7f5efF6cda14Ec424884A494EbCc.
-      - key: FACILITATOR_PRIVATE_KEY
-        sync: false
-      # The operator's stealth meta-address and viewing key: the gateway can find and settle
-      # payments, never move them.
-      - key: STEALTH_META_ADDRESS
-        sync: false
-      - key: STEALTH_VIEWING_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      # Optional: both set, the credit keeper runs.
-      - key: OPENROUTER_MANAGEMENT_KEY
-        sync: false
-      - key: TOPUP_WEBHOOK_URL
-        sync: false
