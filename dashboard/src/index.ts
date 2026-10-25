@@ -57,7 +57,7 @@ const { ownerToken, viewerToken } = startDashboard({
     controls,
     chainId,
     asset,
-    explorer: chainId === 4663 ? 'https://explorer.chain.robinhood.com' : chainId === 46630 ? 'https://explorer.testnet.chain.robinhood.com' : undefined,
+    explorer: chainId === 4663 ? 'https://robin.etherscan.io' : chainId === 46630 ? 'https://explorer.testnet.chain.robinhood.com' : undefined,
     balanceOf: cached((address: Address) => publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [address] })),
     approvalOf: aspUrl
       ? cached(async (label: string) => {

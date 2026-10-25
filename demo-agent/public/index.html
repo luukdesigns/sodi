@@ -92,7 +92,7 @@
 </main>
 <script>
 (() => {
-  const EXPLORER = { 46630: 'https://explorer.testnet.chain.robinhood.com', 4663: 'https://explorer.chain.robinhood.com' };
+  const EXPLORER = { 46630: 'https://explorer.testnet.chain.robinhood.com', 4663: 'https://robin.etherscan.io' };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const usd = (base) => { const v = Number(base) / 1e6; return v.toLocaleString(undefined, { maximumFractionDigits: 6 }); };
