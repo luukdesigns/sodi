@@ -6,11 +6,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createGateway } from '../../src/app.js';
 import { ModelCatalog } from '../../src/catalog.js';
+import { CreditLedger, upstreamCost } from '../../src/credits.js';
 import { DIGEST_HEADER, checkDelivery, deliveryDigest } from '../../src/digest.js';
 import { GuardModelClassifier, RateLimiter } from '../../src/guards.js';
 import { PaymentError, type PaymentGate } from '../../src/payments.js';
 import { Upstream } from '../../src/upstream.js';
-import { API_KEY, type MockOpenRouter, answerFor, startMockOpenRouter } from '../mock-openrouter.js';
+import { API_KEY, MOCK_COST_USD, type MockOpenRouter, answerFor, startMockOpenRouter } from '../mock-openrouter.js';
 
 const SECRET = 'the launch codes are 0000';
 
@@ -20,9 +21,10 @@ class FakePayments {
   paymentRequired(amount: bigint, resource: string, description: string) {
     return { x402Version: 2, accepts: [{ scheme: 'exact', amount: amount.toString(), resource, description }] };
   }
-  async verify(header: string, amount: bigint) {
+  async verify(header: string, amount: bigint | ((from: `0x${string}`) => bigint)) {
     const [from, paid] = header.split(':');
-    if (BigInt(paid ?? 0) < amount) throw new PaymentError('underpaid');
+    const due = typeof amount === 'function' ? amount(from as `0x${string}`) : amount;
+    if (BigInt(paid ?? 0) < due) throw new PaymentError('underpaid');
     return {
       from: from as `0x${string}`,
       value: BigInt(paid!),
@@ -51,6 +53,7 @@ describe('gateway (mock upstream, stand-in payments)', () => {
       limiter: new RateLimiter(3, 60_000),
       abuse: new GuardModelClassifier(upstream),
       marginBps: 1000,
+      credits: new CreditLedger(),
       limits: { defaultMaxTokens: 256, maxTokens: 4096 },
       network: 'eip155:46630',
     });
@@ -160,6 +163,39 @@ describe('gateway (mock upstream, stand-in payments)', () => {
     for (let i = 0; i < 4; i++) statuses.push((await post('/v1/chat/completions', chat(), h)).status);
     expect(statuses).toEqual([200, 200, 200, 429]);
     expect((await post('/v1/chat/completions', chat(), { 'payment-signature': '0x6666666666666666666666666666666666666666:999999' })).status).toBe(200);
+  });
+
+  it('credits the change from an overpaid request to the same payer, and only to it', async () => {
+    const payer = '0x8888888888888888888888888888888888888888';
+    const body = chat({ max_tokens: 2000 });
+    const quoteFor = async (who?: string) => BigInt((await (await post('/v1/chat/completions', body, who ? { 'sodi-payer': who } : {})).json()).accepts[0].amount);
+    const full = await quoteFor();
+    expect(await quoteFor(payer)).toBe(full); // no credit yet
+
+    const first = await post('/v1/chat/completions', body, { 'payment-signature': `${payer}:${full}` });
+    expect(first.status).toBe(200);
+    // Charged what the upstream reported, plus the 10% margin; the rest is credit.
+    const charged = BigInt(Math.ceil(MOCK_COST_USD * 1e6 * 1.1));
+    expect(BigInt(first.headers.get('sodi-credit')!)).toBe(full - charged);
+
+    // Its next quote is reduced by the credit (to the 1-unit minimum here); another payer's isn't.
+    const reduced = await quoteFor(payer);
+    // The credit (full - charged) covers all but `charged` of the next identical request.
+    expect(reduced).toBe(charged);
+    expect(await quoteFor('0x9999999999999999999999999999999999999999')).toBe(full);
+    // Claiming the payer but paying from another address: the reduced amount is underpaid.
+    expect((await post('/v1/chat/completions', body, { 'sodi-payer': payer, 'payment-signature': `0x9999999999999999999999999999999999999999:${reduced}` })).status).toBe(402);
+
+    const second = await post('/v1/chat/completions', body, { 'payment-signature': `${payer}:${reduced}` });
+    expect(second.status).toBe(200);
+    // Paid `charged` plus the credit it used (the full quote in all), charged `charged` again: same change.
+    expect(BigInt(second.headers.get('sodi-credit')!)).toBe(full - charged);
+  });
+
+  it('reads the upstream cost from a body or a stream, ignoring text in the answer', () => {
+    expect(upstreamCost('{"choices":[{"message":{"content":"the \\"cost\\": 99 is fake"}}],"usage":{"cost":0.000059607,"cost_details":{"upstream_inference_cost":0.000059607}}}')).toBe(0.000059607);
+    expect(upstreamCost('data: {"x":1}\n\ndata: {"usage":{"cost":1.5e-5}}\n\n')).toBe(0.000015);
+    expect(upstreamCost('{"usage":{}}')).toBeUndefined();
   });
 
   it('logged nothing at all', () => {

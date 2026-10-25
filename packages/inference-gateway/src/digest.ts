@@ -21,8 +21,13 @@ export const deliveryDigest = (bytes: Uint8Array | string): string => `sha256=${
  * breaks off mid-stream ends the stream cleanly with a comment saying so (and the digest of what was
  * sent) rather than an error, so nothing about the request ends up in an error log.
  */
-export function digestingStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+export function digestingStream(
+  source: ReadableStream<Uint8Array>,
+  /** Called with everything streamed, once it ends; may return SSE comment lines to add before the digest. */
+  onEnd?: (streamed: string) => string | undefined,
+): ReadableStream<Uint8Array> {
   const hash = createHash('sha256');
+  const seen: Uint8Array[] = [];
   const reader = source.getReader();
   const enc = new TextEncoder();
   return new ReadableStream<Uint8Array>({
@@ -37,11 +42,18 @@ export function digestingStream(source: ReadableStream<Uint8Array>): ReadableStr
         chunk = { done: true, value: undefined };
       }
       if (chunk.done) {
+        const extra = onEnd?.(Buffer.concat(seen).toString('utf8'));
+        if (extra) {
+          const bytes = enc.encode(extra);
+          hash.update(bytes);
+          controller.enqueue(bytes);
+        }
         controller.enqueue(enc.encode(`${STREAM_DIGEST_PREFIX}sha256=${hash.digest('hex')}\n\n`));
         controller.close();
         return;
       }
       hash.update(chunk.value);
+      if (onEnd) seen.push(chunk.value);
       controller.enqueue(chunk.value);
     },
     cancel(reason) {

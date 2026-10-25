@@ -30,12 +30,13 @@ import { createGateway } from '../../src/app.js';
 import { ModelCatalog } from '../../src/catalog.js';
 import { DIGEST_HEADER, checkDelivery, deliveryDigest } from '../../src/digest.js';
 import { RateLimiter } from '../../src/guards.js';
+import { CreditLedger } from '../../src/credits.js';
 import { CreditKeeper } from '../../src/keeper.js';
 import { PaymentGate } from '../../src/payments.js';
 import { quote } from '../../src/pricing.js';
 import { parseRequest } from '../../src/requests.js';
 import { Upstream } from '../../src/upstream.js';
-import { API_KEY, MANAGEMENT_KEY, MODELS, type MockOpenRouter, answerFor, startMockOpenRouter } from '../mock-openrouter.js';
+import { API_KEY, MANAGEMENT_KEY, MOCK_COST_USD, MODELS, type MockOpenRouter, answerFor, startMockOpenRouter } from '../mock-openrouter.js';
 
 const RPC = process.env.FORK_RPC ?? 'http://127.0.0.1:8545';
 const WHALE = (process.env.USDG_WHALE ?? '0xf0d65776d3ce5f4b6f5e6043326cee858df55506') as Address;
@@ -109,6 +110,8 @@ describe('inference gateway on a testnet fork', () => {
     servers.push(await listen(createGateway({ ...common, limiter: new RateLimiter(100, 60_000) }), 28510));
     // A second instance with a tight limit, for the rate-limit test.
     servers.push(await listen(createGateway({ ...common, limiter: new RateLimiter(2, 60_000) }), 28511));
+    // A third that keeps change from overpaid requests, for the credit test.
+    servers.push(await listen(createGateway({ ...common, limiter: new RateLimiter(100, 60_000), credits: new CreditLedger() }), 28514));
 
     servers.push(startAsp(28512, () => aspState, join(aspDir, 'sets')));
     client = new Rx402Client({
@@ -244,6 +247,21 @@ describe('inference gateway on a testnet fork', () => {
     }
     expect(statuses).toEqual([200, 200, 429]);
     expect(await balance(session.address)).toBe(afterTwo);
+  }, 600_000);
+
+  it('credits the change to the session: its next request pays about the real cost', async () => {
+    const body = chat({ max_tokens: 3000 });
+    const full = priceOf('openai', body);
+    const charged = BigInt(Math.ceil(MOCK_COST_USD * 1e6 * 1.1));
+    const first = await client.fetch('http://127.0.0.1:28514/v1/chat/completions', post('', body), { announcePayer: true });
+    expect(first.response.status).toBe(200);
+    expect(first.payment!.amount).toBe(full);
+    expect(BigInt(first.response.headers.get('sodi-credit')!)).toBe(full - charged);
+    const second = await client.fetch('http://127.0.0.1:28514/v1/chat/completions', post('', body), { announcePayer: true });
+    expect(second.response.status).toBe(200);
+    expect(second.payment!.from).toBe(first.payment!.from);
+    expect(second.payment!.amount).toBe(charged); // the rest came out of the credit
+    expect(await balance(second.payment!.payTo)).toBe(charged);
   }, 600_000);
 
   it('the keeper tops up below the threshold, and the gateway stops quoting below the floor', async () => {

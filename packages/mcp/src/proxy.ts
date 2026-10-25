@@ -136,6 +136,7 @@ export function createPaidProxy(client: Rx402Client, options: ProxyOptions): Pai
         {
           maxPaymentAmount: remaining,
           allowedHosts: [gateway.host],
+          announcePayer: true,
           inspect: (quote) => {
             const verdict = inspectQuoteText(quote);
             if (verdict.decision !== 'allow') throw new Error(`refused the gateway's quote: it failed the quote-text scan (${verdict.findings.map((f) => f.code).join(', ') || verdict.reason})`);
@@ -171,9 +172,11 @@ export function createPaidProxy(client: Rx402Client, options: ProxyOptions): Pai
       res.end();
       const delivered = Buffer.concat(chunks).toString('utf8');
       const ok = checkDigest(delivered, headers['sodi-delivery-digest']);
+      const credit = response.headers.get('sodi-credit') ?? delivered.match(/^: sodi-credit (\d+)$/m)?.[1];
       options.log?.(
         `${model}: ${response.status}, paid ${payment ? usd(payment.amount) : '0'} USDG from ${payment?.from ?? '-'}, ` +
-          `delivery ${ok === undefined ? 'unreceipted' : ok ? 'verified' : 'DIGEST MISMATCH'}, ${usd(spent)} of ${usd(options.maxTotalSpend)} USDG spent`,
+          `delivery ${ok === undefined ? 'unreceipted' : ok ? 'verified' : 'DIGEST MISMATCH'}, ` +
+          `${credit ? `${usd(BigInt(credit))} USDG credit for the next request, ` : ''}${usd(spent)} of ${usd(options.maxTotalSpend)} USDG spent`,
       );
     });
   }

@@ -39,10 +39,11 @@ The price is fixed before anything is sent upstream:
 price = (input tokens × prompt price + max_tokens × completion price + per-request price) × (1 + margin)
 ```
 
-- Prices are OpenRouter's, from `/api/v1/models`, refreshed every 10 minutes. Models listed with a variable price (routers such as `openrouter/auto`) can't be quoted and are refused.
+- **Prices are a ceiling over providers.** One model's providers on OpenRouter can differ in price 30-fold, and which one serves a request isn't known in advance. Each model is quoted at the most expensive of its five cheapest providers (from `/api/v1/models/{id}/endpoints`, refreshed every 10 minutes), and requests are routed with that ceiling as `max_price`, cheapest qualifying provider first. The upstream can't charge more than the quote. Models listed with a variable price (routers such as `openrouter/auto`) can't be quoted and are refused.
 - Input tokens are estimated from the prompt's size: one token per three bytes, plus a few per message. Tokenizers average closer to four bytes a token on English, so the estimate runs high. Images are counted by their encoded size, which overstates them.
 - `max_tokens` is enforced upstream. Every request carries one (`DEFAULT_MAX_TOKENS` if the client didn't set one), and requests above `MAX_TOKENS` are refused, not cut. The price assumes every one of them is used.
-- **Overpayment is margin.** Shorter answers and a high input estimate are not refunded. That keeps payment to one signature per request, and it's why the quote is an upper bound you can check before paying.
+- **Change becomes credit.** A quote is a worst case, paid up front in one signature. After a request, the gateway reads what the upstream actually charged (OpenRouter's `usage.cost`), adds the margin, and credits the rest to the paying session. A client that names its session on the unpaid request (`Sodi-Payer: 0x…`) gets that credit taken off the quote; it's only honoured if the payment then comes from that address, so spending a session's credit takes its key. The remaining credit is returned in a `Sodi-Credit` header (or, for streams, a `: sodi-credit <units>` comment before the digest). Over a session's life an agent pays about the real cost plus margin.
+- **What credit doesn't cover.** The last request of a session overpays, and its change is lost when the session rotates. Credit is held in memory for 24 hours, so a gateway restart forfeits it. Each payment is at least 1 unit, since the payment is what proves who is paying. Set `CREDITS=false` to turn it off, and overpayment is plain margin.
 
 Only fields we can price are forwarded. `n` above 1, `models` fallbacks, `plugins`, `user`, `metadata` and the client's own `provider` are dropped or refused.
 
@@ -100,6 +101,7 @@ Derive the stealth keys from the operator wallet with `deriveStealthKeys` in [@s
 | `ABUSE_GUARD_MODEL` | unset | e.g. `meta-llama/llama-guard-4-12b` |
 | `OPENROUTER_MANAGEMENT_KEY`, `TOPUP_WEBHOOK_URL` | unset | Both set: the keeper runs |
 | `CREDIT_THRESHOLD_USD` / `CREDIT_TOPUP_USD` / `CREDIT_FLOOR_USD` | `20` / `50` / `2` | |
+| `CREDITS` / `CREDIT_TTL_HOURS` | `true` / `24` | Credit change from overpaid requests to the paying session |
 | `MAX_BODY_BYTES` | `1000000` | |
 | `PUBLIC_URL` | unset | Base URL for the `resource` in 402s, behind a proxy |
 | `PORT` / `HOST` | `8410` / `127.0.0.1` | |

@@ -87,7 +87,8 @@ export class PaymentGate {
   }
 
   /** Checks a payment header against the price. Throws PaymentError with a reason the client may see. */
-  async verify(header: string, amount: bigint): Promise<VerifiedPayment> {
+  /** `amount` may depend on who pays (a payer with credit owes less). */
+  async verify(header: string, amount: bigint | ((from: Address) => bigint)): Promise<VerifiedPayment> {
     let payment: X402Payment;
     try {
       payment = decodePaymentHeader(header);
@@ -96,8 +97,9 @@ export class PaymentGate {
     }
     const a = payment.payload?.authorization;
     if (!a?.from || !a.nonce) throw new PaymentError('payment has no authorization');
+    const due = typeof amount === 'function' ? amount(a.from) : amount;
     const stealth = Boolean(payment.payload.stealth);
-    const expected = { asset: this.config.asset, amount, chainId: this.config.chainId, domain: this.domain };
+    const expected = { asset: this.config.asset, amount: due, chainId: this.config.chainId, domain: this.domain };
     let verified: Awaited<ReturnType<StealthReceiver['verify']>> | undefined;
     if (stealth) {
       if (!this.config.stealth) throw new PaymentError('stealth payments are not offered here');
@@ -107,7 +109,7 @@ export class PaymentGate {
         throw new PaymentError((err as Error).message);
       }
     } else {
-      await this.verifyPlain(payment, amount);
+      await this.verifyPlain(payment, due);
     }
 
     const key = a.nonce.toLowerCase();

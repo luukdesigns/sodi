@@ -77,6 +77,18 @@ export interface FetchOptions {
    * Throw to refuse the payment; the error propagates and nothing is paid.
    */
   inspect?: (paymentRequired: Record<string, unknown>, url: URL) => void | Promise<void>;
+  /**
+   * Send `Sodi-Payer` with the session that would pay, so a server that credits change from earlier
+   * overpayments (the Sodi inference gateway) quotes that session's price. It reveals only the
+   * address the payment would reveal anyway, and only to the server being paid.
+   */
+  announcePayer?: boolean;
+}
+
+function withHeader(init: RequestInit, name: string, value: string): RequestInit {
+  const headers = new Headers(init.headers);
+  headers.set(name, value);
+  return { ...init, headers };
 }
 
 export interface PaidResponse {
@@ -278,7 +290,10 @@ export class Rx402Client {
     init: RequestInit = {},
     options: FetchOptions = {},
   ): Promise<PaidResponse> {
-    const first = await fetch(input, init);
+    // Name the session that would pay, so a server that keeps change (the Sodi gateway) can take
+    // that session's credit off its quote.
+    const payer = options.announcePayer ? this.likelyPayer() : undefined;
+    const first = await fetch(input, payer ? withHeader(init, 'sodi-payer', payer) : init);
     if (first.status !== 402) return { response: first };
     // Pay the server that actually asked for payment, after any redirects, and check that one.
     const url = new URL(first.url || String(input));
@@ -286,7 +301,15 @@ export class Rx402Client {
     // Before anything is signed: the caller may refuse the quote (e.g. on what its text says).
     if (options.inspect) await options.inspect(raw, url);
     const required = toPaymentRequired(raw);
-    return this.exclusive(() => this.pay(url, init, options, required));
+    return this.exclusive(() => this.pay(url, init, options, required, payer));
+  }
+
+  /** The session the next payment would come from, if the current one can still pay (amount aside). */
+  private likelyPayer(): Address | undefined {
+    const s = this.config.store.load().sessions.at(-1);
+    if (!s) return undefined;
+    const { maxPayments, maxAgeSeconds } = this.config.policy;
+    return s.payments < maxPayments && this.now() - s.openedAt < maxAgeSeconds && BigInt(s.budget) > BigInt(s.spent) ? s.address : undefined;
   }
 
   private async pay(
@@ -294,6 +317,7 @@ export class Rx402Client {
     init: RequestInit,
     options: FetchOptions,
     required: ReturnType<typeof toPaymentRequired>,
+    quotedFor?: Address,
   ): Promise<PaidResponse> {
     const chainId = await this.getChainId();
     const controls = this.config.controls?.load();
@@ -307,23 +331,36 @@ export class Rx402Client {
     for (const c of [options.maxPaymentAmount, controls?.maxPaymentAmount === undefined ? undefined : BigInt(controls.maxPaymentAmount)]) {
       if (c !== undefined && c < cap) cap = c;
     }
-    let requirement = selectRequirement(required, chainId, this.config.asset, this.config.policy.maxPaymentAmount);
-    if (requirement.amount > cap) {
-      try {
-        requirement = selectRequirement(required, chainId, this.config.asset, cap);
-      } catch {
-        throw new PaymentBlockedError('over-request-cap', `price ${requirement.amount} is above the cap of ${cap}`);
+    const pick = (req: ReturnType<typeof toPaymentRequired>) => {
+      let r = selectRequirement(req, chainId, this.config.asset, this.config.policy.maxPaymentAmount);
+      if (r.amount > cap) {
+        try {
+          r = selectRequirement(req, chainId, this.config.asset, cap);
+        } catch {
+          throw new PaymentBlockedError('over-request-cap', `price ${r.amount} is above the cap of ${cap}`);
+        }
       }
-    }
-    if (controls?.dailyLimit !== undefined) {
-      const spent = this.spentSince(this.now() - 86_400);
-      if (spent + requirement.amount > BigInt(controls.dailyLimit)) {
-        throw new PaymentBlockedError('over-daily-limit', `paying ${requirement.amount} would pass the 24-hour limit (${spent} already spent)`);
+      if (controls?.dailyLimit !== undefined) {
+        const spent = this.spentSince(this.now() - 86_400);
+        if (spent + r.amount > BigInt(controls.dailyLimit)) {
+          throw new PaymentBlockedError('over-daily-limit', `paying ${r.amount} would pass the 24-hour limit (${spent} already spent)`);
+        }
       }
-    }
+      return r;
+    };
+    let requirement = pick(required);
 
     let state = this.config.store.load();
     let session = this.usableSession(state, requirement.amount);
+    if (!session && quotedFor) {
+      // The quote assumed the current session's credit, but a new session will pay: get its own quote.
+      const fresh = await fetch(url, init);
+      if (fresh.status !== 402) return { response: fresh };
+      const raw = await readPaymentRequired(fresh);
+      if (options.inspect) await options.inspect(raw, url);
+      required = toPaymentRequired(raw);
+      requirement = pick(required);
+    }
     if (!session) {
       const budget = this.config.policy.budget > requirement.amount ? this.config.policy.budget : requirement.amount;
       session = await this.openSessionLocked(budget);

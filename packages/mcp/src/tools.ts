@@ -212,6 +212,8 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
           {
             maxPaymentAmount: cap,
             allowedHosts: options.allowedHosts.length ? [...options.allowedHosts, target.host] : [],
+            // The gateway keeps change from overpaid requests for the same session's next request.
+            announcePayer: true,
             // The quote's free text is the gateway's to write: scan it before it is paid or shown to a model.
             inspect: (quote) => {
               const verdict = inspectQuoteText(quote);
@@ -250,6 +252,7 @@ export function createSodiMcpServer(client: Rx402Client, options: McpOptions): M
           usage: usage ?? null,
           payment: payment ? { paidUsdg: usd(payment.amount), fromSession: payment.from, stealth: payment.stealth } : null,
           delivery: { digest, verified: digest !== null && digest === sha256(text) },
+          creditUsdg: response.headers.get('sodi-credit') ? usd(BigInt(response.headers.get('sodi-credit')!)) : null,
           settlementTx: settlement ? (JSON.parse(Buffer.from(settlement, 'base64').toString()).transaction ?? null) : null,
           quoteScan: { decision: 'allow', nonBlockingFindings: notes },
         });

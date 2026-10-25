@@ -45,6 +45,9 @@ export const SPREAD = [
   { prompt: '0.0000006', completion: '0.0000024' },
 ];
 
+/** What every mock request "costs" upstream, as OpenRouter reports it in usage.cost: $0.00001. */
+export const MOCK_COST_USD = 0.00001;
+
 export const API_KEY = 'sk-or-test-inference';
 export const MANAGEMENT_KEY = 'sk-or-test-management';
 
@@ -110,7 +113,7 @@ export async function startMockOpenRouter(): Promise<MockOpenRouter> {
           object: 'chat.completion',
           model: body.model,
           choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 10, completion_tokens: words.length, total_tokens: 10 + words.length },
+          usage: { prompt_tokens: 10, completion_tokens: words.length, total_tokens: 10 + words.length, cost: MOCK_COST_USD },
         });
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -119,7 +122,7 @@ export async function startMockOpenRouter(): Promise<MockOpenRouter> {
         res.write(`data: ${JSON.stringify({ id: 'gen-1', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta: { content: w } }] })}\n\n`);
         await new Promise((r) => setTimeout(r, 5));
       }
-      res.write(`data: ${JSON.stringify({ id: 'gen-1', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ id: 'gen-1', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: words.length, cost: MOCK_COST_USD } })}\n\n`);
       return res.end('data: [DONE]\n\n');
     }
 
@@ -132,7 +135,7 @@ export async function startMockOpenRouter(): Promise<MockOpenRouter> {
         model: body.model,
         content: [{ type: 'text', text: answer }],
         stop_reason: 'end_turn',
-        usage: { input_tokens: 10, output_tokens: words.length },
+        usage: { input_tokens: 10, output_tokens: words.length, cost: MOCK_COST_USD },
       });
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -144,7 +147,7 @@ export async function startMockOpenRouter(): Promise<MockOpenRouter> {
       await new Promise((r) => setTimeout(r, 5));
     }
     ev('content_block_stop', { type: 'content_block_stop', index: 0 });
-    ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: words.length } });
+    ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: words.length, cost: MOCK_COST_USD } });
     ev('message_stop', { type: 'message_stop' });
     res.end();
   });

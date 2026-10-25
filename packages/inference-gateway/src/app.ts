@@ -13,10 +13,12 @@
  * beyond a status check or passed on.
  */
 import { Hono, type Context } from 'hono';
+import { isAddress } from 'viem';
 
 import type { ModelCatalog } from './catalog.js';
 import { DIGEST_HEADER, deliveryDigest, digestingStream } from './digest.js';
 import { type AbuseHook, type RateLimiter, allowAll } from './guards.js';
+import { type CreditLedger, upstreamCost } from './credits.js';
 import type { CreditKeeper } from './keeper.js';
 import { PaymentError, type PaymentGate } from './payments.js';
 import { PricingError, quote } from './pricing.js';
@@ -30,6 +32,8 @@ export interface GatewayConfig {
   limiter: RateLimiter;
   abuse?: AbuseHook;
   keeper?: CreditKeeper;
+  /** Change from overpaid requests, taken off the same payer's next quote. Off when unset. */
+  credits?: CreditLedger;
   /** Margin on top of the upstream price, in basis points. */
   marginBps: number;
   limits: Limits;
@@ -106,15 +110,41 @@ export function createGateway(config: GatewayConfig): Hono {
 
     const resource = `${config.publicUrl ?? new URL(c.req.url).origin}/v1${PATHS[format]}`;
     const description = `${req.model}: up to ${price.maxOutputTokens} output tokens, about ${price.inputTokens} input tokens (estimated high)`;
+    // A payer with credit owes the quote less its credit (at least 1 unit: the payment proves who pays).
+    const credits = config.credits;
+    const due = (payer?: string) => {
+      const credit = credits && payer && isAddress(payer) ? credits.available(payer) : 0n;
+      return credit >= price.amount ? 1n : price.amount - credit;
+    };
+    const quoted = (amount: bigint) => {
+      const off = price.amount - amount;
+      return off > 0n ? `${description}; ${off} units of credit applied` : description;
+    };
     const header = c.req.header('payment-signature') ?? c.req.header('x-payment');
-    if (!header) return Response.json(config.payments.paymentRequired(price.amount, resource, description), { status: 402, headers: { 'cache-control': 'no-store' } });
+    if (!header) {
+      const amount = due(c.req.header('sodi-payer'));
+      return Response.json(config.payments.paymentRequired(amount, resource, quoted(amount)), { status: 402, headers: { 'cache-control': 'no-store' } });
+    }
 
     let payment;
+    let owed = price.amount;
     try {
-      payment = await config.payments.verify(header, price.amount);
+      payment = await config.payments.verify(header, (from) => (owed = due(from)));
     } catch (err) {
       if (!(err instanceof PaymentError)) throw err;
-      return Response.json({ ...config.payments.paymentRequired(price.amount, resource, description), error: err.message }, { status: 402, headers: { 'cache-control': 'no-store' } });
+      return Response.json({ ...config.payments.paymentRequired(owed, resource, quoted(owed)), error: err.message }, { status: 402, headers: { 'cache-control': 'no-store' } });
+    }
+    // Hold the credit this payment relies on; give it back if the request is refused.
+    const held = credits?.take(payment.from, price.amount - owed);
+    const release = payment.release;
+    payment.release = () => {
+      held?.restore();
+      release();
+    };
+    // Two requests at once can't spend the same credit: if it was used meanwhile, this one is short.
+    if (payment.value + (held?.taken ?? 0n) < price.amount) {
+      payment.release();
+      return Response.json({ ...config.payments.paymentRequired(due(payment.from), resource, quoted(due(payment.from))), error: 'credit was used by another request; pay the new quote' }, { status: 402, headers: { 'cache-control': 'no-store' } });
     }
 
     if (!config.limiter.take(payment.from)) {
@@ -148,12 +178,30 @@ export function createGateway(config: GatewayConfig): Hono {
       return error(format, 402, 'payment could not be settled');
     }
 
+    // After delivery: what the upstream charged, plus margin, against what this request was paid with.
+    // The rest is credited to the payer for its next request. Unknown cost: no change.
+    const budget = payment.value + (held?.taken ?? 0n);
+    const settleChange = (body: string): bigint | undefined => {
+      if (!credits) return undefined;
+      const cost = upstreamCost(body);
+      if (cost === undefined) return undefined;
+      const charged = BigInt(Math.ceil(cost * 1e6 * (1 + config.marginBps / 10_000)));
+      if (budget > charged) credits.add(payment.from, budget - charged);
+      return credits.available(payment.from);
+    };
+
     const headers = new Headers({
       'content-type': upstream.headers.get('content-type') ?? (req.stream ? 'text/event-stream' : 'application/json'),
       'cache-control': 'no-store',
       'payment-response': Buffer.from(JSON.stringify({ success: true, transaction: tx, network: config.network, payer: payment.from })).toString('base64'),
     });
-    if (req.stream && upstream.body) return new Response(digestingStream(upstream.body), { status: 200, headers });
+    if (req.stream && upstream.body) {
+      const stream = digestingStream(upstream.body, (streamed) => {
+        const credit = settleChange(streamed);
+        return credit === undefined ? undefined : `: sodi-credit ${credit}\n\n`;
+      });
+      return new Response(stream, { status: 200, headers });
+    }
 
     let bytes: Uint8Array<ArrayBuffer>;
     try {
@@ -162,6 +210,8 @@ export function createGateway(config: GatewayConfig): Hono {
       return error(format, 502, 'the upstream response broke off after payment');
     }
     headers.set(DIGEST_HEADER, deliveryDigest(bytes));
+    const credit = settleChange(Buffer.from(bytes).toString('utf8'));
+    if (credit !== undefined) headers.set('sodi-credit', credit.toString());
     return new Response(bytes, { status: 200, headers });
   }
 

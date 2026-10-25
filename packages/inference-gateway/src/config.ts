@@ -7,6 +7,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 import type { GatewayConfig } from './app.js';
 import { ModelCatalog } from './catalog.js';
+import { CreditLedger } from './credits.js';
 import { GuardModelClassifier, RateLimiter } from './guards.js';
 import { CreditKeeper, WebhookTopUp } from './keeper.js';
 import { PaymentGate } from './payments.js';
@@ -81,6 +82,8 @@ export async function fromEnv(): Promise<{ config: GatewayConfig; port: number; 
     limiter: new RateLimiter(num('RATE_LIMIT', '30'), num('RATE_WINDOW_SECONDS', '60') * 1000),
     abuse: process.env.ABUSE_GUARD_MODEL ? new GuardModelClassifier(upstream, process.env.ABUSE_GUARD_MODEL) : undefined,
     keeper,
+    // Change from overpaid requests, for the same session's next request; CREDITS=false turns it off.
+    credits: env('CREDITS', 'true') === 'false' ? undefined : new CreditLedger(num('CREDIT_TTL_HOURS', '24') * 3600_000),
     marginBps: num('MARGIN_BPS', '1000'),
     limits: { defaultMaxTokens: num('DEFAULT_MAX_TOKENS', '1024'), maxTokens: num('MAX_TOKENS', '8192') },
     maxBodyBytes: num('MAX_BODY_BYTES', '1000000'),

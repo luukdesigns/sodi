@@ -1,5 +1,6 @@
 export { type GatewayConfig, createGateway } from './app.js';
-export { ModelCatalog } from './catalog.js';
+export { ModelCatalog, priceCeiling } from './catalog.js';
+export { CreditLedger, upstreamCost } from './credits.js';
 export { DIGEST_HEADER, STREAM_DIGEST_PREFIX, checkDelivery, deliveryDigest, digestingStream } from './digest.js';
 export { type AbuseHook, type AbuseVerdict, GuardModelClassifier, RateLimiter, allowAll } from './guards.js';
 export { type CreditSource, CreditKeeper, type KeeperConfig, type TopUp, WebhookTopUp } from './keeper.js';
