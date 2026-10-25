@@ -3,10 +3,10 @@
 MCP server that gives AI agents a private wallet for x402 APIs, and private pay-per-request inference. When a tool call hits `402 Payment Required`, it pays in USDG from an rx402 session address that can't be linked to the owner.
 
 ```sh
-claude mcp add sodi -e RX402_MNEMONIC="twelve words …" -- npx -y @sodi/rx402-mcp
+claude mcp add sodi -e RX402_ISSUER_URL=https://issuer.example -e RX402_AGENT_KEY=0x… -- npx -y @sodi/rx402-mcp
 ```
 
-Runs on Robinhood Chain testnet by default. It needs Node 20.11 or later.
+The agent holds only its own key. The pool secret and the hard limits stay with your [session issuer](../../issuer), on another machine, so a compromised agent can spend at most what the issuer agrees to fund. Runs on Robinhood Chain testnet by default. It needs Node 20.11 or later.
 
 ## Tools
 
@@ -33,16 +33,16 @@ With `RX402_MNEMONIC`, the MCP server's machine holds the whole pool, and these 
 
 ## Use with Claude
 
-Claude Code:
-
-```sh
-claude mcp add sodi -e RX402_MNEMONIC="twelve words …" -- npx -y @sodi/rx402-mcp
-```
-
-With a [session issuer](../../issuer), the agent's machine never holds the mnemonic:
+**With a session issuer (recommended).** The agent's machine never holds the pool secret:
 
 ```sh
 claude mcp add sodi -e RX402_ISSUER_URL=https://issuer.example -e RX402_AGENT_KEY=0x… -- npx -y @sodi/rx402-mcp
+```
+
+**With the mnemonic: testnet and local only.** The MCP server holds the whole pool, and the mnemonic sits in plain text in your MCP config. Anyone who can read that file or control the agent's machine controls the pool:
+
+```sh
+claude mcp add sodi -e RX402_MNEMONIC="twelve words …" -- npx -y @sodi/rx402-mcp
 ```
 
 Claude Desktop and other MCP clients:
@@ -53,7 +53,7 @@ Claude Desktop and other MCP clients:
     "sodi": {
       "command": "npx",
       "args": ["-y", "@sodi/rx402-mcp"],
-      "env": { "RX402_MNEMONIC": "twelve words …", "RX402_MAX_PER_REQUEST": "0.10", "RX402_MAX_TOTAL_SPEND": "5" }
+      "env": { "RX402_ISSUER_URL": "https://issuer.example", "RX402_AGENT_KEY": "0x…", "RX402_MAX_PER_REQUEST": "0.10", "RX402_MAX_TOTAL_SPEND": "5" }
     }
   }
 }
