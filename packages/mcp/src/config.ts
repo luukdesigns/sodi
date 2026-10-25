@@ -89,7 +89,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
       ...poolSettings,
       relayer: (relayer = await HttpRelayer.connect(relayerUrl, relayerTerms)),
       prover: prover(),
-      associationSet: aspAssociationSet(env('ASP_URL', 'https://asp.sodi.network')),
+      associationSet: aspAssociationSet(env('ASP_URL', 'https://sodi-asp.onrender.com')),
     });
   }
 

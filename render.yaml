@@ -1,7 +1,7 @@
 # Render Blueprint: the Sodi services on Robinhood Chain testnet.
 #
 #   relayer.sodi.network    relayer: gasless withdrawals to session addresses
-#   asp.sodi.network        approval service: screens deposits, publishes the approved set
+#   sodi-asp.onrender.com   approval service: screens deposits, publishes the approved set
 #   inference.sodi.network  inference gateway: OpenRouter models paid per request over x402
 #
 # In Render: New -> Blueprint -> this repo. Values marked `sync: false` are secrets: Render asks for

@@ -87,7 +87,7 @@ By default it uses Sodi's hosted [relayer](../../relayer), [approval service](..
 | `RX402_ISSUER_URL` | unset | Get sessions from a [session issuer](../../issuer) instead; the agent then holds no pool secret. Set this or `RX402_MNEMONIC`, not both. |
 | `RX402_AGENT_KEY` | with an issuer | The agent's own key: signs requests to the issuer and derives session keys. |
 | `RELAYER_URL` | `https://relayer.sodi.network` | |
-| `ASP_URL` | `https://asp.sodi.network` | |
+| `ASP_URL` | `https://sodi-asp.onrender.com` | |
 | `RPC_URL` | Robinhood Chain testnet | |
 | `DEPLOYMENT_FILE` | the testnet deployment | Shipped in the package; `contracts/deployments/46630.json` from a checkout |
 | `RX402_CIRCUITS_DIR` | shipped in the package | Withdrawal circuit (`withdraw.wasm`, `.zkey`, `.vkey`); checked against pinned hashes |
