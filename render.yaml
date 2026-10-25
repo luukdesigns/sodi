@@ -5,14 +5,14 @@
 #   inference.sodi.network  inference gateway: OpenRouter models paid per request over x402
 #
 # In Render: New -> Blueprint -> this repo. Secrets are not in the repo: upload each service's
-# secrets as a Secret File named `.env` (Environment -> Secret Files). scripts/render-start.sh loads
-# /etc/secrets/.env before starting the service.
+# secrets as a Secret File (Environment -> Secret Files). scripts/render-start.sh reads only the
+# service's own file before starting it:
 #
-#   sodi-relayer            RELAYER_PRIVATE_KEY
-#   sodi-asp                POSTMAN_PRIVATE_KEY
-#   sodi-inference-gateway  FACILITATOR_PRIVATE_KEY, STEALTH_META_ADDRESS, STEALTH_VIEWING_KEY,
-#                           OPENROUTER_API_KEY, and optionally OPENROUTER_MANAGEMENT_KEY and
-#                           TOPUP_WEBHOOK_URL (both set: the credit keeper runs)
+#   sodi-relayer            relayer.env   RELAYER_PRIVATE_KEY
+#   sodi-asp                asp.env       POSTMAN_PRIVATE_KEY
+#   sodi-inference-gateway  gateway.env   FACILITATOR_PRIVATE_KEY, STEALTH_META_ADDRESS, STEALTH_VIEWING_KEY,
+#                                         OPENROUTER_API_KEY, and optionally OPENROUTER_MANAGEMENT_KEY and
+#                                         TOPUP_WEBHOOK_URL (both set: the credit keeper runs)
 #
 # Paid instance types: free services sleep when idle (a sleeping relayer or gateway is a broken one),
 # and disks need a paid plan.
