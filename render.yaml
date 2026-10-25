@@ -1,0 +1,104 @@
+# Render Blueprint: the Sodi services on Robinhood Chain testnet.
+#
+#   relayer.sodi.network    relayer: gasless withdrawals to session addresses
+#   asp.sodi.network        approval service: screens deposits, publishes the approved set
+#   inference.sodi.network  inference gateway: OpenRouter models paid per request over x402
+#
+# In Render: New -> Blueprint -> this repo. Values marked `sync: false` are secrets: Render asks for
+# them when the Blueprint is created, and they are never stored in the repo.
+#
+# Paid instance types: free services sleep when idle (a sleeping relayer or gateway is a broken one),
+# and disks need a paid plan.
+
+services:
+  - type: web
+    name: sodi-relayer
+    runtime: node
+    plan: starter
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start -w @sodi/relayer
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: RELAY_FEE_BPS
+        value: "50"
+      # 0.01 USDG: sessions are small on testnet
+      - key: MIN_WITHDRAWAL
+        value: "10000"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "30"
+
+  - type: web
+    name: sodi-asp
+    runtime: node
+    plan: starter
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start -w @sodi/asp
+    healthCheckPath: /health
+    autoDeploy: true
+    # State and published sets survive restarts and deploys.
+    disk:
+      name: asp-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Holds ASP_POSTMAN on the testnet Entrypoint: publishes the approved set's root.
+      - key: POSTMAN_PRIVATE_KEY
+        sync: false
+      - key: STATE_FILE
+        value: /var/data/state.json
+      - key: SETS_DIR
+        value: /var/data/sets
+      # 30 minutes in which an operator can deny a deposit before it is approved.
+      - key: VETTING_DELAY_SECONDS
+        value: "1800"
+
+  - type: web
+    name: sodi-inference-gateway
+    runtime: node
+    plan: starter
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start -w @sodi/inference-gateway
+    healthCheckPath: /health
+    autoDeploy: true
+    # Exactly one instance: used payments and rate limits are tracked in memory.
+    numInstances: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      - key: PUBLIC_URL
+        value: https://inference.sodi.network
+      - key: MODELS
+        value: moonshotai/kimi-k3,z-ai/glm-5.3,deepseek/deepseek-v4.1-flash,qwen/qwen3.8-2.4t-a95b
+      - key: MARGIN_BPS
+        value: "1000"
+      # The gateway operator: receives payments that don't take the stealth offer.
+      - key: PAY_TO
+        value: "0x12aEbdbBAD793197Fdd6C09a6d49a8b7B47f4712"
+      # Pays settlement gas: the dedicated testnet facilitator 0xd34385efADad7f5efF6cda14Ec424884A494EbCc.
+      - key: FACILITATOR_PRIVATE_KEY
+        sync: false
+      # The operator's stealth meta-address and viewing key: the gateway can find and settle
+      # payments, never move them.
+      - key: STEALTH_META_ADDRESS
+        sync: false
+      - key: STEALTH_VIEWING_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      # Optional: both set, the credit keeper runs.
+      - key: OPENROUTER_MANAGEMENT_KEY
+        sync: false
+      - key: TOPUP_WEBHOOK_URL
+        sync: false
