@@ -103,7 +103,7 @@ export async function fromEnv(): Promise<{ client: Rx402Client; options: McpOpti
   if (gatewayUrl !== 'off') {
     options.gateway = {
       url: gatewayUrl,
-      defaultModel: env('RX402_GATEWAY_MODEL', 'meta-llama/llama-3.3-70b-instruct'),
+      defaultModel: env('RX402_GATEWAY_MODEL', 'deepseek/deepseek-v4.1-flash'),
       defaultMaxTokens: Number(env('RX402_GATEWAY_MAX_TOKENS', '1024')),
     };
   }

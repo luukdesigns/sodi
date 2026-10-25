@@ -83,7 +83,7 @@ By default it uses Sodi's hosted [relayer](../../relayer), [approval service](..
 | `RX402_RECYCLER` | from the deployment file | SodiRecycler for `rx402_recycle`; recycles are submitted by the relayer at `RELAYER_URL`, also with a session issuer |
 | `RX402_MAX_RECYCLE_FEE` | `0.001` | USDG; refuse relayers that charge more per recycle |
 | `RX402_GATEWAY_URL` | `https://inference.sodi.network` | Inference gateway for `ask_model`; `off` removes the tool |
-| `RX402_GATEWAY_MODEL` | `meta-llama/llama-3.3-70b-instruct` | Default model for `ask_model` |
+| `RX402_GATEWAY_MODEL` | `deepseek/deepseek-v4.1-flash` | Default model for `ask_model` |
 | `RX402_GATEWAY_MAX_TOKENS` | `1024` | Default answer cap; the price assumes all of it is used |
 
 ## Verified

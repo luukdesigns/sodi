@@ -25,7 +25,7 @@ With the rx402 client, that's one call:
 const { response } = await rx402.fetch('https://inference.sodi.network/v1/chat/completions', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ model: 'meta-llama/llama-3.3-70b-instruct', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 200 }),
+  body: JSON.stringify({ model: 'deepseek/deepseek-v4.1-flash', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 200 }),
 });
 ```
 
@@ -74,7 +74,7 @@ A refusal at any of steps 1 to 3 leaves the payment unsettled, so it costs the a
 ## Running it
 
 ```sh
-OPENROUTER_API_KEY=sk-or-... MODELS=meta-llama/llama-3.3-70b-instruct,deepseek/deepseek-chat \
+OPENROUTER_API_KEY=sk-or-... MODELS=moonshotai/kimi-k3,z-ai/glm-5.3,deepseek/deepseek-v4.1-flash,qwen/qwen3.8-2.4t-a95b \
 PAY_TO=0x... FACILITATOR_PRIVATE_KEY=0x... \
 STEALTH_META_ADDRESS=st:eth:0x... STEALTH_VIEWING_KEY=0x... \
 npm start -w @sodi/inference-gateway
